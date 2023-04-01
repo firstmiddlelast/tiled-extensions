@@ -8,7 +8,8 @@ const FEEDBACK_LAYER = "WFC-feedback";
 
 let activeMap;
     
-let pixelId = 0;
+const TRANSPARENT_PIXEL_ID = 0;
+let pixelId = TRANSPARENT_PIXEL_ID;
 let pixelIds = [];    // A reference of all pixel Ids, by reference
 let tiles = {};  // A reference to all the Tiled Tile objects, by their .id
 let tileReferences = [];  // All references of tiles, by pixel id
@@ -22,8 +23,12 @@ let data;
 
 
 const DEBUG = false;
-if (DEBUG) tiled.debug = tiled.log;
-else tiled.debug = function (){};
+if (DEBUG) {
+    tiled.debug = tiled.log;
+}
+else {
+    tiled.debug = function (){};
+}
 
 
 
@@ -99,7 +104,7 @@ const selectInput = function () {
     
 
 
-    pixelId = 1;    // 0 is reserved for transparent (unresolved or impossible) pixels in the output
+    pixelId = TRANSPARENT_PIXEL_ID + 1;    // 0 is reserved for transparent (unresolved or impossible) pixels in the output
     pixelIds = [];
     tiles = {};
     tileReferences = [];
@@ -154,6 +159,7 @@ const outputToSelection = function () {
         }
         activeMap = asset;
         for (let layer of asset.layers) {
+            // BUG : layer may be null sometimes!
             if (layer.isTileLayer && layer.name === FEEDBACK_LAYER) {
                 feedbackLayer = layer;
             }
@@ -213,19 +219,28 @@ const outputToSelection = function () {
         const resultData = model.graphics ();
         activeMap.macro ("WFC generation", function () {
             const edits = [];
+            for (const layerId in layersById) {
+                edits [layerId] = layersById[layerId].edit ();
+            }
             for (let x = 0; x < outputWidth; x ++) {
                 for (let y = 0; y < outputHeight; y ++) {
                     const outputPixelId = 
                         resultData [4 * (x + y * outputWidth)] +
                         (resultData [1 + 4 * (x + y * outputWidth)] << 8);
                     if (DEBUG) tiled.debug ("outputPixelId="+outputPixelId);
-                    if (DEBUG) tiled.debug ("tileReferences[outputPixelId]="+tileReferences [outputPixelId]);
-                    const visibleTiles = tilesFromReference (tileReferences [outputPixelId]);
-                    for (const tile of visibleTiles) {
-                        if (edits [tile.layerId] === undefined) {
-                            edits [tile.layerId] = layersById [tile.layerId].edit ();
+                    if (outputPixelId !== TRANSPARENT_PIXEL_ID) {
+                        if (DEBUG) tiled.debug ("tileReferences[outputPixelId]="+tileReferences [outputPixelId]);
+                        const visibleTiles = tilesFromReference (tileReferences [outputPixelId]);
+                        for (const tile of visibleTiles) {
+                            edits [tile.layerId].setTile (outputX + x, outputY + y, tiles [tile.id]);
                         }
-                        edits [tile.layerId].setTile (outputX + x, outputY + y, tiles [tile.id]);
+                    }
+                    else {
+                        if (DEBUG) tiled.debug ("Impossible pixel @" + x + "," + y);
+                        // output a transparent tile on all the layers
+                        for (const layerId in layersById) {
+                            edits [layerId].setTile (outputX + x, outputY + y, null);
+                        }
                     }
                 }
             }
