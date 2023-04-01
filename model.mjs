@@ -5,6 +5,9 @@ import randomIndice from './random-indice.mjs';
 
 export default function Model () {};
 
+const FEATURE_IMPOSSIBLE_PIXEL = true;
+const DEBUG = false;
+
 Model.prototype.FMX = 0;
 Model.prototype.FMY = 0;
 Model.prototype.FMXxFMY = 0;
@@ -95,7 +98,18 @@ Model.prototype.observe = function (rng) {
 
     const amount = this.sumsOfOnes[i];
 
-    if (amount === 0) return false; // TODO manage contradictory states differently
+    if (FEATURE_IMPOSSIBLE_PIXEL) {
+        if (amount <= 0) {
+            if (DEBUG) tiled.log ("Skipping observation of i="+i+" (@"
+                +(i%this.FMX)+","
+                +(i/this.FMX|0)+") because it's impossible);");
+            continue;
+        }
+    }
+      else {
+        if (amount === 0) return false;
+      }
+
 
     const entropy = this.entropies[i];
 
@@ -124,6 +138,10 @@ Model.prototype.observe = function (rng) {
     return true;
   }
 
+    if (DEBUG) tiled.log ("Observing @"
+                +(argmin%this.FMX)+","
+                +(argmin/this.FMX|0));
+
   for (let t = 0; t < this.T; t++) {
     this.distribution[t] = this.wave[argmin][t] ? this.weights[t] : 0;
   }
@@ -146,8 +164,16 @@ Model.prototype.propagate = function () {
     this.stackSize--;
 
     const i1 = e1[0];
+
     const x1 = i1 % this.FMX;
     const y1 = i1 / this.FMX | 0;
+
+      if (FEATURE_IMPOSSIBLE_PIXEL) {
+          if (this.sumsOfOnes [i1] <= 0) {
+              if (DEBUG) tiled.log ("Skipping propagation from @"+x1+","+y1+" because impossible");
+              continue;
+          }
+      }
 
     for (let d = 0; d < 4; d++) {
       const dx = this.DX[d];
@@ -156,7 +182,16 @@ Model.prototype.propagate = function () {
       let x2 = x1 + dx;
       let y2 = y1 + dy;
 
-      if (this.onBoundary(x2, y2)) continue;
+        if (false&&FEATURE_IMPOSSIBLE_PIXEL) {
+          if (this.sumsOfOnes [x2 + this.FMX * y2] <= 0) {
+              if (DEBUG) tiled.log ("Skipping "+x2+","+y2+" : impossible pixel");
+              continue;
+              if (this.onBoundary(x2, y2)) continue;
+            }
+        }
+        else {
+            if (this.onBoundary(x2, y2)) continue;
+        }
 
       if (x2 < 0) x2 += this.FMX;
       else if (x2 >= this.FMX) x2 -= this.FMX;
