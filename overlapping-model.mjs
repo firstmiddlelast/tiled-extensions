@@ -3,6 +3,8 @@
 //const Model = require('./model');
 import Model from './model.mjs';
 
+const FEATURE_IMPOSSIBLE_PIXEL = true;
+
 /**
  *
  * @param {Uint8Array|Uint8ClampedArray} data The RGBA data of the source image
@@ -203,6 +205,9 @@ OverlappingModel.prototype.constructor = OverlappingModel;
  * @protected
  */
 OverlappingModel.prototype.onBoundary = function (x, y) {
+    if (false&&FEATURE_IMPOSSIBLE_PIXEL) {
+        if (this.sumsOfOnes [x + y * this.FMX] <= 0) return true;
+    }
   return !this.periodic && (x + this.N  > this.FMX || y + this.N > this.FMY || x < 0 || y < 0);
 };
 
@@ -266,7 +271,18 @@ OverlappingModel.prototype.graphicsComplete = function (array) {
       const dx = x < this.FMX - this.N + 1 ? 0 : this.N - 1;
 
       const pixelIndex = (y * this.FMX + x) * 4;
-      const color = this.colors[this.patterns[this.observed[x - dx + (y - dy) * this.FMX]][dx + dy * this.N]];
+
+        let color;
+    if (FEATURE_IMPOSSIBLE_PIXEL) {
+        const observed = this.observed[x - dx + (y - dy) * this.FMX];
+        const patterns = this.patterns [observed];
+        if (patterns === undefined) continue;   // All the patterns have been removed from this contradictory pixel
+        const pattern = patterns [dx + dy * this.N];
+        color = this.colors [pattern];
+        }
+    else {
+        color = this.colors[this.patterns[this.observed[x - dx + (y - dy) * this.FMX]][dx + dy * this.N]];
+    }
 
       array[pixelIndex] = color[0];
       array[pixelIndex + 1] = color[1];
