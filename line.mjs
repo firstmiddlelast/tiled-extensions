@@ -7,7 +7,7 @@ export default function line (x0, y0, x1, y1, plot) {
     const dy = Math.abs (y1 - y0);
     const sx = (x0 < x1) ? 1 : -1;
     const sy = (y0 < y1) ? 1 : -1;
-    const err = dx - dy;
+    let err = dx - dy;
 
     while (true) {
         plot (x0, y0); 
