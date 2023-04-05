@@ -2,7 +2,7 @@
  * plot (x, y) draws the point @x, y. 
  * x and y values are not bounded in the line function, so it's up to the plot() call to check those. 
  */
-export default function line (x0, y0, x1, y1, plot) {
+export default function line (x0, y0, x1, y1, plot, nodiagonals = true) {
     const dx = Math.abs (x1 - x0);
     const dy = Math.abs (y1 - y0);
     const sx = (x0 < x1) ? 1 : -1;
@@ -21,10 +21,16 @@ export default function line (x0, y0, x1, y1, plot) {
         if (e2 > -dy) {
             err -= dy; 
             x0  += sx;
+            if (nodiagonals) {
+                plot (x0, y0);
+            }
         }
         if (e2 < dx) {
             err += dx;
             y0  += sy;
+            if (nodiagonals) {
+                plot (x0, y0);
+            }
         }
     }
 }
