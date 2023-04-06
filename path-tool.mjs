@@ -8,6 +8,9 @@ let log = console.log;
 
 
 const findWangIds = function (tile) {
+    if (tile === null) {
+        return [];
+    }
     if (wangIdsCache [tile] !== undefined) {
         return wangIdsCache [tile]; 
     }
@@ -46,7 +49,7 @@ const pathTool = tiled.registerTool ("Path", {
 
 
     activated: function () {
-        layer = tiled.activeAsset.layers [0];   // TODO manage multiple layers
+        layer = this.map.selectedLayers [0];
     },
 
 
