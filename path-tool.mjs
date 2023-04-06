@@ -70,7 +70,6 @@ const pathTool = tiled.registerTool ("Path", {
                 && this.tilePosition.y < layer.height && this.tilePosition.y >= 0) {
                 const diagEnd = diagGraph.grid [this.tilePosition.x] [this.tilePosition.y];
                 const rectEnd = rectGraph.grid [this.tilePosition.x] [this.tilePosition.y];
-                // TODO : use these results to make a selection matching the paths
                 // See list of heuristics: http://theory.stanford.edu/~amitp/GameProgramming/Heuristics.html
                 astarDiagResult = astar.search (diagGraph, diagStart, diagEnd, {closest: true, heuristic: astar.heuristics.diagonal});
                 astarRectResult = astar.search (rectGraph, rectStart, rectEnd, {closest: true});
@@ -81,6 +80,7 @@ const pathTool = tiled.registerTool ("Path", {
                     for (let i = 0; i < astarSelection.length; i ++) {
                         thisMap.selectedArea.add (Qt.rect (astarSelection [i].x, astarSelection [i].y, 1, 1));
                     }
+                    thisMap.selectedArea.add (Qt.rect (startDragX, startDragY, 1, 1));
                 });
             }
             this.statusInfo = "D(rect)=" + (Math.abs (this.tilePosition.x - startDragX) + Math.abs (this.tilePosition.y - startDragY)) + " D(line)=" + lineDistance + " D(diagpath)=" + astarDiagResult.length + " D(rectpath)=" + astarRectResult.length;
@@ -109,7 +109,6 @@ const pathTool = tiled.registerTool ("Path", {
         const clickedTile = layer.tileAt (startDragX, startDragY);
         if (useTerrains) {
             const clickedWangIds = findWangIds (clickedTile);
-            //log ("clickedWangIds="+clickedWangIds);
             for (let x = 0; x < layer.width; x ++) {
                 graph [x] = new Array (layer.height);
                 for (let y = 0; y < layer.height; y ++) {
@@ -125,7 +124,8 @@ const pathTool = tiled.registerTool ("Path", {
                             //log ("tileWId="+tileWId);
                             for (const tlsWId of clickedWangIds) {
                                 //log ("tlsWId="+tlsWId);
-                                if (""+tlsWId === ""+tileWId) {
+                                // If at least one non-zero wang color is in the tile, we can path through it
+                                if (tlsWId.some (e=>e!==0 && tileWId.some (f=>f===e))) {
                                     graph [x] [y] = 1;
                                     break;
                                 }
