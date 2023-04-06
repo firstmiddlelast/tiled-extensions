@@ -38,14 +38,34 @@ let coordsCounter;
 let grid;
 let drawId; // This is either a tile ID or a wang color ID
 
-const importOSM = tiled.registerAction ("ImportOSM", function (action) {
-    coordsCounter = 10000;
-    const f = new TextFile ("c:\\users\\robin\\downloads\\export(3).geojson");  // TODO get this froma file in the UI
+const importOSMAction = tiled.registerAction ("ImportOSM", function (action) {
+    const d = new Dialog ("OSM import");
+    const geoJsonFilePicker = d.addFilePicker ("OSM GEOJson File");
+    const useTerrainsCheckbox = d.addCheckBox ("Use Terrains");
+    const rotationNumber = d.addNumberInput ("Rotation angle");
+    rotationNumber.value = 0;
+    const fillPolygonsCheckbox = d.addCheckBox ("Fill polygons");
+    const importButton = d.addButton ("Import OSM data");
+    importButton.clicked.connect (function () {
+        importOsm (geoJsonFilePicker.fileUrl, rotationNumber.value, fillPolygonsCheckbox.checked, useTerrainsCheckbox.checked);
+    });
+    d.show ();
+});
+
+const urlToLocalPath = function (url) {
+    return url
+        .replace ('file:///', '')
+        .replace (/\//g, '\\');
+}
+
+const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains) {
+    coordsCounter = 10000;  // DEBUG feature.
+    const f = new TextFile (urlToLocalPath (""+geoJsonFile)/*"c:\\users\\robin\\downloads\\export(3).geojson"*/);  // TODO get this froma file in the UI
     p = JSON.parse (f.readAll());
     f.close ();
     activeMap = tiled.activeAsset;  // TODO check this is a map, and there is one layer selected
     plotTile = activeMap.usedTilesets()[0].findTile (9);  // TODO check there is an used tileset
-    const useWangCells = true;
+    const useWangCells = useTerrains;
     const wangIdToTiles = {};
     if (useWangCells) {
         drawId = 2;    // TODO This is a wangColor, it's needed
@@ -122,7 +142,7 @@ const importOSM = tiled.registerAction ("ImportOSM", function (action) {
     }
     tiled.log ("xMapScaling="+xMapScaling);
     tiled.log ("yMapScaling="+yMapScaling);
-    const angle = 20;
+    const angle = rotation;
     const editedLayer = activeMap.selectedLayers [0];
     // Setup a grid for drawing and filling
     grid = new Array (selectedWidth);
@@ -171,7 +191,7 @@ const importOSM = tiled.registerAction ("ImportOSM", function (action) {
                 currentX = /*selectedX + */ Math.floor ((coordLongitude - minLongitude) * xMapScaling);
                 //tiled.log ("coord="+coord+", minLongitude="+minLongitude+",xMapScaling="+xMapScaling);
                 currentY = /*selectedY + */ selectedHeight - Math.floor ((coordLatitude - minLatitude) * yMapScaling); // Latitudes go up and map coordinates go down, so we need to take the opposite of the latitude
-                tiled.log ("currentX="+currentX+",currentY="+currentY);
+                //tiled.log ("currentX="+currentX+",currentY="+currentY);
                 centerX += coordLongitude;
                 centerY += coordLatitude;
                 coordsCount ++;
@@ -186,7 +206,7 @@ const importOSM = tiled.registerAction ("ImportOSM", function (action) {
                 previousY = currentY;
             }
             // TODO : filling polygons should be optional
-            if (false && type === "Polygon") {
+            if (fillPolygons && type === "Polygon") {
                 centerX /= coordsCount;
                 centerY /= coordsCount;
                 centerX = /*selectedX +*/ Math.floor ((centerX - minLongitude) * xMapScaling);
@@ -235,6 +255,12 @@ const importOSM = tiled.registerAction ("ImportOSM", function (action) {
             }
         }
 
+
+        const TOP_RIGHT = 1; 
+        const TOP_LEFT = 7;
+        const BOTTOM_RIGHT = 3;
+        const BOTTOM_LEFT = 5;
+
         let stop = false;   // DEBUG
         let wangCounter = 10000;
         // Now find tiles with the appropriate wang ids (=colors), matching also the colors on the map
@@ -282,7 +308,7 @@ const importOSM = tiled.registerAction ("ImportOSM", function (action) {
     edit.apply ();
     //const c = g.coordinates[0][0];    // Premier point (x, y) d'un MultiLineString
     //g.coordinates[0];    // Premier point (x, y) d'un LineString
-});
+};
 
-importOSM.text = "Import OSM";
+importOSMAction.text = "Import OSM";
 tiled.extendMenu ("Map", [{action: "ImportOSM", before: "MapProperties"}, {separator: true}]);
