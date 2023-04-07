@@ -1,7 +1,9 @@
 # Tiled extensions
 Javascript extensions for the [Tiled Map Editor](https://www.mapeditor.org/)
 
-## path-tool.mjs - status : Working Prototype - requires measuring-tape.png, line.mjs, astar.mjs and fill.mjs
+## path-tool.mjs - status : Working Prototype
+requires measuring-tape.png, line.mjs, astar.mjs and fill.mjs.
+
 Adds a tool for selecting and measuring paths and surfaces, results in the status bar. S=surface, D(diag) = path length using diagonals, D(rect) = path length without diagonals, D(line) = distance from the tile clicked to the current tile when going in a direct line, D(rect) = distance when going only vertical or horizontal. 
 ### Path measurement 
 Click and drag a path to measure it. Ctrl allows the path to use diagonals.  Pressing Alt when you click makes the tool not use Terrains data (the default is to use it). 
@@ -12,9 +14,13 @@ Right-click a tile to select all the contiguous area that contain at least one o
 Adds an 'Transform terrains' item in the Map menu that opens a dialong for rotating, reversing or enlarging (WIP) selected parts of the map. 
 
 ## osm-tiled.mjs - status : Prototype - WIP
+requires line.mjs and fill.mjs
+
 Adds an 'Import OSM' item in the Map menu that opens a dialog for importing Open Source Map GEOJSON data downloaded from [Overpass Turbo](https://overpass-turbo.eu/). 
 
-## wfc-tiled.mjs - status : Working Prototype - requires seedrandom.mjs, overlapping-model.mjs, random-indice.mjs and model.mjs
+## wfc-tiled.mjs - status : Working Prototype
+requires seedrandom.mjs, overlapping-model.mjs, random-indice.mjs and model.mjs
+
 Adds a Map/Wave Function Collapse action that opens a dialog for applying a basic version of the Wave Function Collapse to your currently opened tile map. Based on [Kevin Chapelier port](https://github.com/kchapelier/wavefunctioncollapse) of [Maxim Gumin's implementation of the algorithm](https://github.com/mxgmn/WaveFunctionCollapse). 
 
 ### 1 Give the algorithm a source selection to work from
