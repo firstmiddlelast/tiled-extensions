@@ -1,6 +1,7 @@
 import line from './line.mjs';
 import Graph from './astar.mjs';
 import {astar} from './astar.mjs';
+import fill from './fill.mjs';
 
 
 let wangIdsCache = [];
@@ -41,6 +42,9 @@ let useDiagonals = false;
 let layer;
 let diagGraph;
 let rectGraph;
+let dragsPaths; // true : paths ; false : areas
+let fillableIds;
+let surfaceFilled = 0;
 
 const pathTool = tiled.registerTool ("Path", {
     name: "Pathing Tool", 
@@ -59,7 +63,7 @@ const pathTool = tiled.registerTool ("Path", {
         //log ("tilePosition="+this.tilePosition);
         // TODO : selected surface (with all rects)
         let lineDistance = -1;  // The line function counts the first pixel, but we expect the distance to be 0 in this case
-        if (isDragging) {
+        if (isDragging && dragsPaths) {
             line (this.tilePosition.x, this.tilePosition.y, startDragX, startDragY, function () {
                 lineDistance ++;
             }, !useDiagonals);
@@ -88,6 +92,11 @@ const pathTool = tiled.registerTool ("Path", {
             }
             this.statusInfo = "D(rect)=" + (Math.abs (this.tilePosition.x - startDragX) + Math.abs (this.tilePosition.y - startDragY)) + " D(line)=" + lineDistance + " D(diagpath)=" + astarDiagResult.length + " D(rectpath)=" + astarRectResult.length;
         }
+        else {
+            if (!dragsPaths) {
+                this.statusInfo = "S=" + surfaceFilled;
+            }
+        }
 
     }, 
 
@@ -107,50 +116,82 @@ const pathTool = tiled.registerTool ("Path", {
         startDragY = currentTileY;
         isDragging = true;
 
-        wangIdsCache = [];
-        const graph = new Array (layer.width);
-        const clickedTile = layer.tileAt (startDragX, startDragY);
-        if (useTerrains) {
-            const clickedWangIds = findWangIds (clickedTile);
-            for (let x = 0; x < layer.width; x ++) {
-                graph [x] = new Array (layer.height);
-                for (let y = 0; y < layer.height; y ++) {
-                    if (clickedWangIds.length === 0) {
-                        graph [x] [y] = ((layer.tileAt (x, y) === clickedTile) ? 1 : 0);
-                    }
-                    else {
-                        //Find the wIds of this tile ; if one at least matches one of the starting one, we can use it
-                        const tile = layer.tileAt (x, y);
-                        const tileWIds = findWangIds (tile);
-                        graph [x] [y] = 0;
-                        for (const tileWId of tileWIds) {
-                            //log ("tileWId="+tileWId);
-                            for (const tlsWId of clickedWangIds) {
-                                //log ("tlsWId="+tlsWId);
-                                // If at least one non-zero wang color is in the tile, we can path through it
-                                if (tlsWId.some (e=>e!==0 && tileWId.some (f=>f===e))) {
-                                    graph [x] [y] = 1;
-                                    break;
+        if (button === LEFT_BUTTON) {
+            dragsPaths = true;
+            // TODO we don't need to reset the cache every time, only if the map or the layer changes
+            wangIdsCache = [];
+            const astarGraph = new Array (layer.width);
+            const clickedTile = layer.tileAt (startDragX, startDragY);
+            if (useTerrains) {
+                const clickedWangIds = findWangIds (clickedTile);
+                for (let x = 0; x < layer.width; x ++) {
+                    astarGraph [x] = new Array (layer.height);
+                    for (let y = 0; y < layer.height; y ++) {
+                        if (clickedWangIds.length === 0) {
+                            astarGraph [x] [y] = ((layer.tileAt (x, y) === clickedTile) ? 1 : 0);
+                        }
+                        else {
+                            //Find the wIds of this tile ; if one at least matches one of the starting one, we can use it
+                            const tile = layer.tileAt (x, y);
+                            const tileWIds = findWangIds (tile);
+                            astarGraph [x] [y] = 0;
+                            for (const tileWId of tileWIds) {
+                                //log ("tileWId="+tileWId);
+                                for (const tlsWId of clickedWangIds) {
+                                    //log ("tlsWId="+tlsWId);
+                                    // If at least one non-zero wang color is in the tile, we can path through it
+                                    if (tlsWId.some (e=>e!==0 && tileWId.some (f=>f===e))) {
+                                        astarGraph [x] [y] = 1;
+                                        break;
+                                    }
                                 }
                             }
+                            //log ("astarGraph["+x+"]["+y+"]="+astarGraph[x][y]);
                         }
-                        //log ("graph["+x+"]["+y+"]="+graph[x][y]);
                     }
                 }
             }
-        }
-        else {
-            // We just look for terrains that have the same tile id
-            const clickedId = layer.tileAt (currentTileX, currentTileY).id;
-            for (let x = 0; x < layer.width; x ++) {
-                graph [x] = new Array (layer.height);
-                for (let y = 0; y < layer.height; y ++) {
-                    graph [x] [y] = (layer.tileAt (x, y).id === clickedId) ? 1 : 0;
+            else {
+                // We just look for terrains that have the same tile id
+                const clickedId = layer.tileAt (currentTileX, currentTileY).id;
+                for (let x = 0; x < layer.width; x ++) {
+                    astarGraph [x] = new Array (layer.height);
+                    for (let y = 0; y < layer.height; y ++) {
+                        astarGraph [x] [y] = (layer.tileAt (x, y).id === clickedId) ? 1 : 0;
+                    }
                 }
             }
+            rectGraph = new Graph (astarGraph);
+            diagGraph = new Graph (astarGraph, {diagonal: true});
         }
-        rectGraph = new Graph (graph);
-        diagGraph = new Graph (graph, {diagonal: true});
+        else {
+            dragsPaths = false;
+            fillableIds = [layer.tileAt (currentTileX, currentTileY).id];
+            const thisMap = this.map;
+            this.map.macro ("Select area", function () {
+                const region = thisMap.selectedArea.subtract (thisMap.selectedArea.get());
+                const width = layer.width;
+                const cache = new Array (width * layer.height);
+                surfaceFilled = 0;
+                fill (currentTileX, currentTileY, layer.width, layer.height, 
+                    function (b) {
+                        return !fillableIds.some (e=>e===b);
+                    },
+                    function (x, y) {
+                        if (cache [x+y*width] === undefined) {
+                            cache [x+y*width]=layer.tileAt (x, y).id;
+                        }
+                        return cache [x+y*width];
+                    }, 
+                    function (x, y) {
+                        thisMap.selectedArea.add (Qt.rect (x, y, 1, 1));
+                        surfaceFilled ++;
+                        cache [x+y*width] = -1; // Needs to be filled so it won't be searched again ; -1 because tile ids start at 0. 
+                    }
+                );
+            });
+            this.updateStatusInfo ();
+        }
     }, 
 
     mouseReleased: function () {
