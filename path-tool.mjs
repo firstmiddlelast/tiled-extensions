@@ -106,8 +106,8 @@ const pathTool = tiled.registerTool ("Path", {
         const shift = modifiers & 0x2000000;
         const alt = modifiers & 0x8000000;
         addToSelection = (shift !== 0);
-        useTerrains = (ctrl === 0);
-        useDiagonals = (alt !== 0);
+        useTerrains = (alt === 0);
+        useDiagonals = (ctrl !== 0);
         this.updateStatusInfo ();
     },
 
@@ -165,32 +165,66 @@ const pathTool = tiled.registerTool ("Path", {
             diagGraph = new Graph (astarGraph, {diagonal: true});
         }
         else {
-            dragsPaths = false;
-            fillableIds = [layer.tileAt (currentTileX, currentTileY).id];
-            const thisMap = this.map;
-            this.map.macro ("Select area", function () {
-                const region = thisMap.selectedArea.subtract (thisMap.selectedArea.get());
-                const width = layer.width;
-                const cache = new Array (width * layer.height);
-                surfaceFilled = 0;
-                fill (currentTileX, currentTileY, layer.width, layer.height, 
-                    function (b) {
-                        return !fillableIds.some (e=>e===b);
-                    },
-                    function (x, y) {
-                        if (cache [x+y*width] === undefined) {
-                            cache [x+y*width]=layer.tileAt (x, y).id;
+            if (useTerrains) {
+                fillableIds = findWangIds (layer.tileAt (currentTileX, currentTileY)) [0];  // TODO take into account the case when a tile can have multiple wangids 
+                //tiled.log ("fillableIds="+fillableIds);
+                const thisMap = this.map;
+                thisMap.macro ("Select Terrains area", function () {
+                    const region = thisMap.selectedArea.subtract (thisMap.selectedArea.get ());
+                    const width = layer.width;
+                    surfaceFilled = 0;
+                    const cache = new Array (width * layer.height);
+                    fill (currentTileX, currentTileY, layer.width, layer.height, 
+                        function (wangId) {
+                            //tiled.log ("wangId="+wangId);
+                            // If at least one wang color is the same, we include the tile
+                            const hasOneSameWangColor = fillableIds.some (
+                                fid => wangId.some (
+                                    wid => wid === fid && wid !== 0));
+                            //tiled.log ("hasOneSameWangColor="+hasOneSameWangColor);
+                            return !hasOneSameWangColor;
+                        }, 
+                        function (x, y) {
+                            if (cache [x+y*width] === undefined) {
+                                cache [x+y*width] = findWangIds (layer.tileAt (x, y)) [0];  // TODO take into account the case when a tile can have multiple wangids
+                            }
+                            return cache [x+y*width];
+                        }, 
+                        function (x, y) {
+                            thisMap.selectedArea.add (Qt.rect (x, y, 1, 1));
+                            surfaceFilled ++;
+                            cache [x+y*width] = [];
+                        });
+                });
+            }
+            else {
+                dragsPaths = false;
+                fillableIds = [layer.tileAt (currentTileX, currentTileY).id];
+                const thisMap = this.map;
+                this.map.macro ("Select Tile area", function () {
+                    const region = thisMap.selectedArea.subtract (thisMap.selectedArea.get ());
+                    const width = layer.width;
+                    const cache = new Array (width * layer.height);
+                    surfaceFilled = 0;
+                    fill (currentTileX, currentTileY, layer.width, layer.height, 
+                        function (b) {
+                            return !fillableIds.some (e=>e===b);
+                        },
+                        function (x, y) {
+                            if (cache [x+y*width] === undefined) {
+                                cache [x+y*width] = layer.tileAt (x, y).id;
+                            }
+                            return cache [x+y*width];
+                        }, 
+                        function (x, y) {
+                            thisMap.selectedArea.add (Qt.rect (x, y, 1, 1));
+                            surfaceFilled ++;
+                            cache [x+y*width] = -1; // Needs to be filled so it won't be searched again ; -1 because tile ids start at 0. 
                         }
-                        return cache [x+y*width];
-                    }, 
-                    function (x, y) {
-                        thisMap.selectedArea.add (Qt.rect (x, y, 1, 1));
-                        surfaceFilled ++;
-                        cache [x+y*width] = -1; // Needs to be filled so it won't be searched again ; -1 because tile ids start at 0. 
-                    }
-                );
-            });
-            this.updateStatusInfo ();
+                    );
+                });
+                this.updateStatusInfo ();
+            }
         }
     }, 
 
