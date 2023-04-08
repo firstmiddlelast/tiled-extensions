@@ -2,12 +2,13 @@ const FEEDBACK_LAYER = "Transform-feedback";
 
 
 
-const DEBUG = true;
+const DEBUG = false;
+let debug;
 if (DEBUG) {
-    tiled.debug = tiled.log;
+    debug = tiled.log;
 }
 else {
-    tiled.debug = function (){};
+    debug = function (){};
 }
 
 
@@ -24,7 +25,6 @@ const WANGID_SEPARATOR = ',';
 
 let wangIdToTiles;
 let tileIdToWang; // A map from tile id to wang id
-let tileById;
 let activeMap;
 
 // TODO : check this is an EDGE wang set, not border or mixed
@@ -35,17 +35,17 @@ const buildWangIdToTilesReference = function () {
     if (!activeMap.isTileMap) {
         throw new Error ("A tile map must be active");
     }
-    tiled.debug ("activeMap="+activeMap);
+    debug ("activeMap="+activeMap);
     const tilesets = activeMap.usedTilesets ();
     const selectedRects = activeMap.selectedArea.get().rects;
-    tiled.debug (selectedRects);
+    debug (selectedRects);
     for (const tileset of tilesets) {
         for (const tile of tileset.tiles) {
             tileById [tile.id] = tile;
             for (const wangSet of tile.tileset.wangSets) {
                 const wangId = wangSet.wangId (tile);
                 tileIdToWang [tile.id] = wangId;   // FIXME There can be more than one wang id per tile??
-                tiled.debug ("Tile " + tile.id + " has wangId " + wangId);
+                debug ("Tile " + tile.id + " has wangId " + wangId);
                 const wangIdString = wangId.join (WANGID_SEPARATOR);
                 if (wangIdToTiles [wangIdString] === undefined)
                     wangIdToTiles [wangIdString] = [];
@@ -104,10 +104,28 @@ const buildWangCellsMap = function (tileMap) {
 
 
 
+const pickRandomTile = function (wangId) {
+    const wangIdString = wangId.join (WANGID_SEPARATOR);
+    const distribution = [];
+    let totalProb = 0;
+    for (const replacementTileId of wangIdsToTiles [wangIdString]) {
+        distribution.push ({tileId: replacementTileId, probability: tileProbabilities [replacementTileId]});
+        totalProb += tileProbabilities [replacementTileId];
+    }
+    if (DEBUG) debug ("distribution="+JSON.stringify(distribution));
+    let pickedRandom = Math.random () * totalProb;
+    for (const distributed of distribution) {
+        pickedRandom -= distributed.probability;
+        if (pickedRandom <= 0) {
+            return distributed.tileId;
+        }
+    }
+}
+
 const wangCellsToMap = function (tileMap) {
     const boundingRect = tileMap.selectedArea.boundingRect;
     for (const tileId in tileById) {
-        tiled.debug ("tileById["+tileId+"]="+tileById[tileId]);
+        debug ("tileById["+tileId+"]="+tileById[tileId]);
     }
     const edits = {};
     for (const layer of tileMap.selectedLayers) {   // TODO : use visible layers instead of selected ones
@@ -115,14 +133,9 @@ const wangCellsToMap = function (tileMap) {
         const edit = layer.edit ();
         for (let x = 0; x < wangCells.length / 2; x ++) {
             for (let y = 0; y < wangCells [0].length / 2; y ++) {
-                // Build a wangId from the wang cells
-                const wangIdString = [0, wangCells [x * 2 + 1] [y * 2], 0, wangCells [x * 2 + 1] [y * 2 + 1], 
-                    0, wangCells [x * 2] [y * 2 + 1], 0, wangCells [x * 2] [y * 2]].join (WANGID_SEPARATOR);
-                const tileId = wangIdToTiles [wangIdString];
-                // TODO Pick a random one and put it onto the map
-                tiled.debug ("tileId="+tileId);
-                // For now we take only the first tile ([0])
-                edit.setTile (x + boundingRect.x, y + boundingRect.y, tileById [tileId[0]]);
+                const wangId = [0, wangCells [x * 2 + 1] [y * 2], 0, wangCells [x * 2 + 1] [y * 2 + 1], 
+                    0, wangCells [x * 2] [y * 2 + 1], 0, wangCells [x * 2] [y * 2]];
+                edit.setTile (x + boundingRect.x, y + boundingRect.y, tileById [pickRandomTile (wangId)]);
             }
         }
         edit.apply ();
@@ -148,56 +161,53 @@ const scale = function (matrix, scaleX, scaleY) {
     return output;
 }
 
+let wangIdsToTiles;
+let tileById;
+let tileProbabilities;
+
+const analyzeTileSet = function (tileset) {
+    for (const tile of tileset.tiles) {
+        debug ("Tile " + tile.id + " has probability " + tile.probability);
+        tileProbabilities [tile.id] = tile.probability;
+        tileById [tile.id] = tile;
+        // ..choose tiles that have a matching WangId..
+        for (const wangSet of tile.tileset.wangSets) {
+            const wangId = wangSet.wangId (tile);
+            debug ("Tile " + tile.id + " has wangId " + wangId);
+            const wangIdString = wangId.join (',');
+            if (wangIdsToTiles [wangIdString] === undefined)
+                wangIdsToTiles [wangIdString] = [];
+            if (!wangIdsToTiles [wangIdString].some (e=>e==tile.id))
+                wangIdsToTiles [wangIdString].push (tile.id);
+        }
+    }
+}
 
 const randomizeSelectedArea = function () {
     // Go through the selected area..
     const activeMap = tiled.activeAsset;
-    tiled.debug ("activeMap="+activeMap);
+    debug ("activeMap="+activeMap);
     const tilesets = activeMap.usedTilesets ();
     const selectedRects = activeMap.selectedArea.get().rects;
-    tiled.debug (selectedRects);
-    let wangIdsToTiles = {};
-    const tileById = {};
-    const tileProbabilities = {};
-    for (const tileset of tilesets) {
-        for (const tile of tileset.tiles) {
-            tiled.debug ("Tile " + tile.id + " has probability " + tile.probability);
-            if (tile.probability < 1) { // TODO change the probability mechanism : sort the probabilities from greater to least, test them all and replace with the last one that passes the test
-                tileProbabilities [tile.id] = tile.probability;
-            }
-            tileById [tile.id] = tile;
-            // ..choose tiles that have a matching WangId..
-            for (const wangSet of tile.tileset.wangSets) {
-                const wangId = wangSet.wangId (tile);
-                tiled.debug ("Tile " + tile.id + " has wangId " + wangId);
-                const wangIdString = wangId.join (',');
-                if (wangIdsToTiles [wangIdString] === undefined)
-                    wangIdsToTiles [wangIdString] = [];
-                if (!wangIdsToTiles [wangIdString].some (e=>e==tile.id))
-                    wangIdsToTiles [wangIdString].push (tile.id);
-            }
-        }
+    debug (selectedRects);
+
+    wangIdsToTiles = {};
+    tileById = {};
+    tileProbabilities = {};
+    for (const tileset of tilesets) {   // FIXME can be an issue if there are more than one tileset with tiles having the same id
+        analyzeTileSet (tileset);
     }
     activeMap.macro ("Randomize", function(){
-    tiled.debug ("Randomizing..");
-    tiled.debug (JSON.stringify (tileProbabilities));
+    debug ("Randomizing..");
+    if (DEBUG) debug (JSON.stringify (tileProbabilities));
     for (const rect of selectedRects) {
         for (let x = rect.x; x < rect.x + rect.width; x ++) {
-            for (let y = rect.y; y < rect.y + rect.width; y ++) {
+            for (let y = rect.y; y < rect.y + rect.height; y ++) {
                 for (const layer of activeMap.selectedLayers) {
                     const edit = layer.edit ();
                     const tile = layer.tileAt (x, y);
                     for (const wangSet of tile.tileset.wangSets) {
-                        const wangId = wangSet.wangId (tile);
-                        // ..pick all the tiles and replace them with other tiles 
-                        // ..with the same wangid randomly according to their probability
-                        const wangIdString = wangId.join (',');
-                        for (const replacementTileId of wangIdsToTiles [wangIdString]) {
-                            if (Math.random () < tileProbabilities [replacementTileId]) {
-                                tiled.debug ("Replacing tile " + tile.id + " @"+x+","+y+" with tile " + replacementTileId);
-                                edit.setTile (x, y, tileById [replacementTileId]);
-                            }
-                        }
+                        edit.setTile (x, y, tileById [pickRandomTile (wangSet.wangId (tile))]);
                     }
                     edit.apply();
                 }
@@ -222,6 +232,7 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
         activeMap = tiled.activeAsset;
         buildWangIdToTilesReference ();
         buildWangCellsMap (activeMap);
+        transformSelectedButton.enabled = true;
     });
     transformCombo = d.addComboBox ("Transforms", ["Horizontal symmetry", "Vertical symmetry", "Rotate left", "Rotate right", "Rotate 180°"]);
     useTerrainsCheckbox = d.addCheckBox ("Use Terrains");
@@ -256,9 +267,17 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
             default: 
                 throw new Error ("Invalid index : " + transformCombo.currentIndex);
         }
-        tiled.debug ("wangCells="+JSON.stringify (wangCells));
+        if (DEBUG) debug ("wangCells="+JSON.stringify (wangCells));
+        wangIdsToTiles = {};
+        tileById = {};
+        tileProbabilities = {};
+        for (const tileset of activeMap.usedTilesets()) {   // FIXME can be an issue if there are more than one tileset with tiles having the same id
+            analyzeTileSet (tileset);
+        }
         wangCellsToMap (activeMap);
+        transformSelectedButton.enabled = false;
     });
+    transformSelectedButton.enabled = false;
     d.addSeparator ();
     const scalingSelectButton = d.addButton ("Select the area to scale up");
     scalingSelectButton.clicked.connect (function () {
@@ -280,6 +299,12 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
             tiled.alert ("The input selection for scaling must be in the same map as the output");
         }
         wangCells = scale (wangCells, xScalingSpinner.value, yScalingSpinner.value);
+        wangIdsToTiles = {};
+        tileById = {};
+        tileProbabilities = {};
+        for (const tileset of activeMap.usedTilesets()) {   // FIXME can be an issue if there are more than one tileset with tiles having the same id
+            analyzeTileSet (tileset);
+        }
         wangCellsToMap (activeMap);
         scalingApplyButton.enabled = false;
     });
