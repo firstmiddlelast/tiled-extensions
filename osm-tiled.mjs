@@ -1,6 +1,14 @@
 import line from './line.mjs';
 import fill from './fill.mjs';
 
+
+const DEBUG = false;
+let debug = function () {};
+if (DEBUG) {
+    debug = tiled.log;
+}
+
+
 /*
 
 p = new Process();
@@ -9,6 +17,15 @@ r = p.readStdOut ();
 p.close ();
 
 */
+
+
+
+const TOP_RIGHT = 1; 
+const TOP_LEFT = 7;
+const BOTTOM_RIGHT = 3;
+const BOTTOM_LEFT = 5;
+
+
 
 // From https://stackoverflow.com/questions/17410809/how-to-calculate-rotation-in-2d-in-javascript
 function rotate (cx, cy, x, y, angle) {
@@ -25,7 +42,7 @@ function rotate (cx, cy, x, y, angle) {
 const plot = function (id) {
     return function (x, y) {
         if (x >= 0 && x < grid.length && y >= 0 && y < grid [0].length) {
-            //tiled.log ("Plotting " + x + "," + y + " as " + id);
+            //debug ("Plotting " + x + "," + y + " as " + id);
             grid [x][y] = id;
         }
     }
@@ -41,13 +58,16 @@ let drawId; // This is either a tile ID or a wang color ID
 const importOSMAction = tiled.registerAction ("ImportOSM", function (action) {
     const d = new Dialog ("OSM import");
     const geoJsonFilePicker = d.addFilePicker ("OSM GEOJson File");
+    geoJsonFilePicker.fileUrl = "C:/Users/ROBIN/Downloads/export(3).geojson";
     const useTerrainsCheckbox = d.addCheckBox ("Use Terrains");
+    useTerrainsCheckbox.checked = true;
     const rotationNumber = d.addNumberInput ("Rotation angle");
     rotationNumber.value = 0;
     const fillPolygonsCheckbox = d.addCheckBox ("Fill polygons");
+    const respectOSMRatioCheckbox = d.addCheckBox ("Respect OSM XY ratio");
     const importButton = d.addButton ("Import OSM data");
     importButton.clicked.connect (function () {
-        importOsm (geoJsonFilePicker.fileUrl, rotationNumber.value, fillPolygonsCheckbox.checked, useTerrainsCheckbox.checked);
+        importOsm (geoJsonFilePicker.fileUrl, rotationNumber.value, fillPolygonsCheckbox.checked, useTerrainsCheckbox.checked, respectOSMRatioCheckbox.checked);
     });
     d.show ();
 });
@@ -58,23 +78,35 @@ const urlToLocalPath = function (url) {
         .replace (/\//g, '\\');
 }
 
-const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains) {
+const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains, respectOSMRatio) {
     coordsCounter = 10000;  // DEBUG feature.
-    const f = new TextFile (urlToLocalPath (""+geoJsonFile)/*"c:\\users\\robin\\downloads\\export(3).geojson"*/);  // TODO get this froma file in the UI
+    const f = new TextFile (urlToLocalPath ("" + geoJsonFile));
     p = JSON.parse (f.readAll());
     f.close ();
     activeMap = tiled.activeAsset;  // TODO check this is a map, and there is one layer selected
-    plotTile = activeMap.usedTilesets()[0].findTile (9);  // TODO check there is an used tileset
+    const tiles = tiled.mapEditor.tilesetsView.selectedTiles;
+    if (tiles.length !== 1) {
+        tiled.alert ("One tile must be selected in the tilesets view");
+        return;
+    }
+    const drawingTileId = tiles [0].id;
+    plotTile = activeMap.usedTilesets()[0].findTile (drawingTileId);
+    //debug ("plotTile="+plotTile);
     const useWangCells = useTerrains;
     const wangIdToTiles = {};
     if (useWangCells) {
-        drawId = 2;    // TODO This is a wangColor, it's needed
+        const drawWangId = tiles [0].tileset.wangSets [0].wangId (tiles [0]);
+        if (!(drawWangId [TOP_RIGHT] === drawWangId [TOP_LEFT] && drawWangId [TOP_LEFT] === drawWangId [BOTTOM_LEFT] && drawWangId [BOTTOM_LEFT] === drawWangId [BOTTOM_RIGHT])) {
+            tiled.alert ("The selected tile must have only one terrain type");
+            return;
+        }
+        drawId = drawWangId [TOP_LEFT];
         for (const tile of activeMap.usedTilesets()[0].tiles) {
-            wangIdToTiles [""+tile.tileset.wangSets[0].wangId (tile)] = tile;
+            wangIdToTiles ["" + tile.tileset.wangSets[0].wangId (tile)] = tile;
         }
     }
     else {
-        drawId = 9;    // Make this the selected tile in the selected tileset
+        drawId = drawingTileId;    // Make this the selected tile in the selected tileset
     }
     let selectedWidth = activeMap.selectedArea.boundingRect.width;
     let selectedHeight = activeMap.selectedArea.boundingRect.height;
@@ -88,7 +120,6 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains) {
     let centerLatitude = 0;
     let coordsCount = 0;
     for (const feature of p.features) {
-        tiled.log (feature.properties.description);
         let geometry = feature.geometry;
         const type = geometry.type;
         let coordsSet;
@@ -129,19 +160,18 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains) {
     }
     centerLongitude = centerLongitude / coordsCount;
     centerLatitude /= coordsCount;
-    tiled.log ("rotation centerLongitude="+centerLongitude+", centerLatitude="+centerLatitude);
+    debug ("rotation centerLongitude="+centerLongitude+", centerLatitude="+centerLatitude);
     if (useWangCells) {
         selectedWidth *= 2;
         selectedHeight *= 2;
     }
     let xMapScaling = selectedWidth / (maxLongitude - minLongitude);
     let yMapScaling = selectedHeight / (maxLatitude - minLatitude);
-    const respectOSMRatio = false;   // TODO make this an option
     if (respectOSMRatio) {
         xMapScaling = yMapScaling = Math.min (xMapScaling, yMapScaling);
     }
-    tiled.log ("xMapScaling="+xMapScaling);
-    tiled.log ("yMapScaling="+yMapScaling);
+    debug ("xMapScaling="+xMapScaling);
+    debug ("yMapScaling="+yMapScaling);
     const angle = rotation;
     const editedLayer = activeMap.selectedLayers [0];
     // Setup a grid for drawing and filling
@@ -184,38 +214,37 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains) {
                     const rotatedCoords = rotate (
                         centerLongitude, centerLatitude,
                         coordLongitude, coordLatitude, angle);
-                    tiled.log ("Rotated coords="+rotatedCoords[0]+","+rotatedCoords[1] +" (from " + coordLongitude+","+coordLatitude+")");
+                    debug ("Rotated coords="+rotatedCoords[0]+","+rotatedCoords[1] +" (from " + coordLongitude+","+coordLatitude+")");
                     coordLongitude = rotatedCoords [0];
                     coordLatitude = rotatedCoords [1];
                 }
                 currentX = /*selectedX + */ Math.floor ((coordLongitude - minLongitude) * xMapScaling);
-                //tiled.log ("coord="+coord+", minLongitude="+minLongitude+",xMapScaling="+xMapScaling);
+                //debug ("coord="+coord+", minLongitude="+minLongitude+",xMapScaling="+xMapScaling);
                 currentY = /*selectedY + */ selectedHeight - Math.floor ((coordLatitude - minLatitude) * yMapScaling); // Latitudes go up and map coordinates go down, so we need to take the opposite of the latitude
-                //tiled.log ("currentX="+currentX+",currentY="+currentY);
+                //debug ("currentX="+currentX+",currentY="+currentY);
                 centerX += coordLongitude;
                 centerY += coordLatitude;
                 coordsCount ++;
                 if (previousX !== undefined) {
                     if (previousX !== currentX || previousY !== currentY) {
                 coordsCounter --;
-                        //tiled.log ("Line " + previousX + "," + previousY + "-" + currentX + "," + currentY);
+                        //debug ("Line " + previousX + "," + previousY + "-" + currentX + "," + currentY);
                         line (previousX, previousY, currentX, currentY, plot (drawId), useWangCells);
                     }
                 }
                 previousX = currentX;
                 previousY = currentY;
             }
-            // TODO : filling polygons should be optional
             if (fillPolygons && type === "Polygon") {
                 centerX /= coordsCount;
                 centerY /= coordsCount;
                 centerX = /*selectedX +*/ Math.floor ((centerX - minLongitude) * xMapScaling);
                 centerY = /*selectedY +*/ selectedHeight - Math.floor ((centerY - minLatitude) * yMapScaling);
-                tiled.log ("polygon centerX="+centerX+",centerY="+centerY);
+                debug ("polygon centerX="+centerX+",centerY="+centerY+",drawId="+drawId);
                 fill (centerX, centerY, 
                     grid.length, grid [0].length, 
                     drawId, function (x, y) {
-                        return grid[x][y];
+                        return grid [x] [y];
                     }, plot (drawId));
                 // TODO : utiliser une grille de wangCells
             }
@@ -240,7 +269,7 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains) {
                 if (grid [x] [y] !== undefined) {
                     const xSmallOdd = x - 1 | 1;
                     const ySmallOdd = y - 1 | 1;
-                    //tiled.log ("xSmallOdd="+xSmallOdd);
+                    //debug ("xSmallOdd="+xSmallOdd);
                     if (grid [xSmallOdd] === undefined) {
                         grid [xSmallOdd] = new Array (selectedHeight);
                     }
@@ -256,11 +285,6 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains) {
         }
 
 
-        const TOP_RIGHT = 1; 
-        const TOP_LEFT = 7;
-        const BOTTOM_RIGHT = 3;
-        const BOTTOM_LEFT = 5;
-
         let stop = false;   // DEBUG
         let wangCounter = 10000;
         // Now find tiles with the appropriate wang ids (=colors), matching also the colors on the map
@@ -270,7 +294,7 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains) {
                 let wangId;
                 if (tile === null) {
                     wangId = [0, 0, 0, 0, 0, 0, 0, 0];
-                    tiled.log ("empty tile @"+tileX+","+tileY);
+                    debug ("empty tile @"+tileX+","+tileY);
                 }
                 else {
                     wangId = tile.tileset.wangSets[0].wangId (tile);  // TODO could be more than one wangsets
@@ -296,7 +320,7 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains) {
                 }
                 if (changed) {
                     const newTile = wangIdToTiles [""+wangId];
-                    if (tile === null) tiled.log ("newTile="+newTile);
+                    if (tile === null) debug ("newTile="+newTile);
                     if (newTile !== undefined) {
                         edit.setTile (tileX, tileY, newTile);
                     }

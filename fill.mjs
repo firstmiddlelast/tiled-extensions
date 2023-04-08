@@ -13,7 +13,7 @@ const directions = [
 export default function fill (x, y, width, height, border, getGrid, setGrid) {
     //tiled.log ("Filling from " + x + "," + y + " to color " + border);
     const queue = [{x: x, y: y}];
-    let fillCounter = 100000;   // DEBUG ensures the fill stops at some point
+    let fillCounter = 10000;   // DEBUG ensures the fill stops at some point
     while (queue.length > 0 && fillCounter > 0) {
         fillCounter --;
         const current = queue.shift(0);
@@ -25,11 +25,9 @@ export default function fill (x, y, width, height, border, getGrid, setGrid) {
             //tiled.log ("child="+child.x+","+child.y);
             if (child.x >= 0 && child.x < width 
                 && child.y >= 0 && child.y < height) {
-                    //tiled.log ("getGrid (child.x, child.y)="+getGrid (child.x, child.y));
-                    if (border instanceof Function 
-                        && !border (getGrid (child.x, child.y))
-                        || !border instanceof Function 
-                        && getGrid (child.x, child.y) !== border) {
+                    //tiled.log ("getGrid ("+child.x+","+ child.y+")="+getGrid (child.x, child.y)+",border="+border);
+                    if ((border instanceof Function && !border (getGrid (child.x, child.y)))
+                        || (!(border instanceof Function) && getGrid (child.x, child.y) !== border)) {
                             setGrid (child.x, child.y);
                             queue.push(child);
                     }
