@@ -17,7 +17,7 @@ Pressing Shift before clicking keeps the previous selected area.
 ### Surface measurement
 Right-click a tile to select all the contiguous area that contain _at least one_ of the terrains on the tile clicked. The total surface is shown in the status bar. Press Alt _before_ clicking to not use Terrains and only expand to identical tiles. Pressing Shift before clicking keeps the previous selected area. 
 
-## transform-terrains.mjs - status : Prototype - WIP
+## transform-terrains.mjs - status : Proof Of Concept - WIP
 Adds an 'Transform terrains' item in the Map menu that opens a dialong for rotating, reversing or enlarging (WIP) selected parts of the map. 
 
 ## osm-tiled.mjs - status : Proof of concept - WIP
