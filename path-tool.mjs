@@ -1,3 +1,13 @@
+/**
+ * Adds a tool for selecting and measuring paths and surfaces, results in the status bar : S=last selected surface/total selected surface, D(diag) = path length using diagonals, D(rect) = path length without diagonals, D(line) = distance from the tile clicked to the current tile when going in a direct line, D(rect) = distance when going only vertical or horizontal.
+ * Path measurement
+
+ * Click and drag a path to measure it. Ctrl allows the path to use diagonals. Pressing Alt when you click makes the tool not use Terrains data (the default is to use it).
+Surface measurement
+
+ * Right-click a tile to select all the contiguous area that contain at least one of the terrains on the tile clicked. The total surface is shown in the status bar. Press Alt when clicking to not use Terrains and only expand to identical tiles.
+ */
+
 import line from './line.mjs';
 import Graph from './astar.mjs';
 import {astar} from './astar.mjs';
@@ -44,7 +54,9 @@ let diagGraph;
 let rectGraph;
 let dragsPaths; // true : paths ; false : areas
 let fillableIds;
-let surfaceFilled = 0;
+let totalSurfaceFilled = 0;
+let surfaceFilled;
+let selectedRegion;
 
 const pathTool = tiled.registerTool ("Path", {
     name: "Pathing Tool", 
@@ -54,6 +66,12 @@ const pathTool = tiled.registerTool ("Path", {
 
     activated: function () {
         layer = this.map.selectedLayers [0];
+        surfaceFilled = 0;
+        const rects = this.map.selectedArea.get().rects;
+        for (const rect of rects) {
+            surfaceFilled += rect.width * rect.height; 
+        }
+        totalSurfaceFilled = surfaceFilled;
     },
 
 
@@ -61,7 +79,6 @@ const pathTool = tiled.registerTool ("Path", {
         currentTileX = this.tilePosition.x;
         currentTileY = this.tilePosition.y;
         //log ("tilePosition="+this.tilePosition);
-        // TODO : selected surface (with all rects)
         let lineDistance = -1;  // The line function counts the first pixel, but we expect the distance to be 0 in this case
         if (isDragging && dragsPaths) {
             line (this.tilePosition.x, this.tilePosition.y, startDragX, startDragY, function () {
@@ -83,18 +100,22 @@ const pathTool = tiled.registerTool ("Path", {
                 const thisMap = this.map;   // Required because in the function below, this.map is undefined. 
                 const astarSelection = (useDiagonals)? astarDiagResult : astarRectResult;
                 this.map.macro ("Select path", function () {
-                    const region = thisMap.selectedArea.subtract (thisMap.selectedArea.get());
+                    thisMap.selectedArea.subtract (thisMap.selectedArea.get());
                     for (let i = 0; i < astarSelection.length; i ++) {
                         thisMap.selectedArea.add (Qt.rect (astarSelection [i].x, astarSelection [i].y, 1, 1));
                     }
                     thisMap.selectedArea.add (Qt.rect (startDragX, startDragY, 1, 1));
+                    if (addToSelection) {
+                        thisMap.selectedArea.add (selectedRegion);
+                    }
                 });
             }
-            this.statusInfo = "D(rect)=" + (Math.abs (this.tilePosition.x - startDragX) + Math.abs (this.tilePosition.y - startDragY)) + " D(line)=" + lineDistance + " D(diagpath)=" + astarDiagResult.length + " D(rectpath)=" + astarRectResult.length;
+            const dRect = (Math.abs (this.tilePosition.x - startDragX) + Math.abs (this.tilePosition.y - startDragY));
+            this.statusInfo = "D(rect)=" + dRect + " D(line)=" + lineDistance + " D(diagpath)=" + astarDiagResult.length + " D(rectpath)=" + astarRectResult.length;
         }
         else {
             if (!dragsPaths) {
-                this.statusInfo = "S=" + surfaceFilled;
+                this.statusInfo = "S=" + surfaceFilled + "/" + totalSurfaceFilled;
             }
         }
 
@@ -114,6 +135,7 @@ const pathTool = tiled.registerTool ("Path", {
     mousePressed: function (button, x, y, modifiers) {
         startDragX = currentTileX;
         startDragY = currentTileY;
+        selectedRegion = this.map.selectedArea.get();
         isDragging = true;
 
         if (button === LEFT_BUTTON) {
@@ -170,8 +192,14 @@ const pathTool = tiled.registerTool ("Path", {
                 //tiled.log ("fillableIds="+fillableIds);
                 const thisMap = this.map;
                 thisMap.macro ("Select Terrains area", function () {
-                    const region = thisMap.selectedArea.subtract (thisMap.selectedArea.get ());
+                    thisMap.selectedArea.subtract (thisMap.selectedArea.get ());
                     const width = layer.width;
+                    if (addToSelection) {
+                        totalSurfaceFilled += surfaceFilled;
+                    }
+                    else {
+                        totalSurfaceFilled = 0;
+                    }
                     surfaceFilled = 0;
                     const cache = new Array (width * layer.height);
                     fill (currentTileX, currentTileY, layer.width, layer.height, 
@@ -195,14 +223,19 @@ const pathTool = tiled.registerTool ("Path", {
                             surfaceFilled ++;
                             cache [x+y*width] = [];
                         });
+                    if (addToSelection) {
+                        thisMap.selectedArea.add (selectedRegion);
+                    }
+                    totalSurfaceFilled += surfaceFilled;
                 });
+                this.updateStatusInfo ();
             }
             else {
                 dragsPaths = false;
                 fillableIds = [layer.tileAt (currentTileX, currentTileY).id];
                 const thisMap = this.map;
                 this.map.macro ("Select Tile area", function () {
-                    const region = thisMap.selectedArea.subtract (thisMap.selectedArea.get ());
+                    thisMap.selectedArea.subtract (thisMap.selectedArea.get ());
                     const width = layer.width;
                     const cache = new Array (width * layer.height);
                     surfaceFilled = 0;
@@ -222,6 +255,9 @@ const pathTool = tiled.registerTool ("Path", {
                             cache [x+y*width] = -1; // Needs to be filled so it won't be searched again ; -1 because tile ids start at 0. 
                         }
                     );
+                    if (addToSelection) {
+                        thisMap.selectedArea.add (selectedRegion);
+                    }
                 });
                 this.updateStatusInfo ();
             }
