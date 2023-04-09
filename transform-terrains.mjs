@@ -73,8 +73,6 @@ const buildWangCellsMap = function (tileMap, tileIdToWang) {
 
 
 const wangCellsToMap = function (tileMap, tileById, wangIdsToTiles, tileProbabilities) {
-const WANGID_SEPARATOR = ',';
-
     const boundingRect = tileMap.selectedArea.boundingRect;
     for (const tileId in tileById) {
         debug ("tileById["+tileId+"]="+tileById[tileId]);

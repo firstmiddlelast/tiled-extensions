@@ -10,16 +10,6 @@ if (DEBUG) {
 }
 
 
-/*
-
-p = new Process();
-e = p.exec ('C:\\Users\\ROBIN\\Downloads\\curl-8.0.1_5-win32-mingw\\bin\\curl', ["https://www.mapeditor.org/docs/scripting/classes/Process.html"], true);
-r = p.readStdOut ();
-p.close ();
-
-*/
-
-
 
 const TOP_RIGHT = 1; 
 const TOP_LEFT = 7;
