@@ -18,10 +18,11 @@ Pressing Shift before clicking keeps the previous selected area.
 Right-click a tile to select all the contiguous area that contain _at least one_ of the terrains on the tile clicked. The total surface is shown in the status bar. Press Alt _before_ clicking to not use Terrains and only expand to identical tiles. Pressing Shift before clicking keeps the previous selected area. 
 
 ## transform-terrains.mjs - status : Proof Of Concept - WIP
+requires `wang.mjs`
 Adds an 'Transform terrains' item in the Map menu that opens a dialong for rotating, reversing or enlarging (WIP) selected parts of the map. 
 
 ## osm-tiled.mjs - status : Proof of concept - WIP
-requires `line.mjs` and `fill.mjs`
+requires `wang.mjs`, `line.mjs` and `fill.mjs`
 
 Adds an 'Import OSM' item in the Map menu that opens a dialog for importing Open Source Maps, downloaded in GEOJSON format from [Overpass Turbo](https://overpass-turbo.eu/). 
 The downloaded map is drawn on the rectangular selection area (using Terrains or not). 
