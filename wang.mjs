@@ -1,7 +1,7 @@
 const DEBUG = false;
 let debug;
 if (DEBUG) {
-    debug = console.log;
+    debug = tiled.log;
 }
 else {
     debug = function () {};
@@ -44,6 +44,9 @@ export function pickRandomTile (wangId, wangIdsToTiles, tileProbabilities) {
     const wangIdString = wangId.join (WANGID_SEPARATOR);
     const distribution = [];
     let totalProb = 0;
+    if (wangIdsToTiles [wangIdString] === undefined) {
+        return;
+    }
     for (const replacementTileId of wangIdsToTiles [wangIdString]) {
         distribution.push ({tileId: replacementTileId, probability: tileProbabilities [replacementTileId]});
         totalProb += tileProbabilities [replacementTileId];

@@ -1,5 +1,6 @@
 import line from './line.mjs';
 import fill from './fill.mjs';
+import {analyzeTileSets, pickRandomTile} from './wang.mjs';
 
 
 const DEBUG = false;
@@ -67,13 +68,26 @@ const importOSMAction = tiled.registerAction ("ImportOSM", function (action) {
     rotationNumber.value = 0;
     const fillPolygonsCheckbox = d.addCheckBox ("Fill polygons");
     const respectOSMRatioCheckbox = d.addCheckBox ("Respect OSM XY ratio");
+    const emptyUndefinedTerrainsCheckbox = d.addCheckBox ("Empty undefined terrains");
+    emptyUndefinedTerrainsCheckbox.stateChanged.connect (function () {
+        if (emptyUndefinedTerrainsCheckbox.checked) {
+            fillUndefinedTerrainsCheckbox.checked = false;
+        }
+    });
+    const fillUndefinedTerrainsCheckbox = d.addCheckBox ("Fill undefined terrains");
+    fillUndefinedTerrainsCheckbox.stateChanged.connect (function () {
+        if (fillUndefinedTerrainsCheckbox.checked) {
+            emptyUndefinedTerrainsCheckbox.checked = false;
+        }
+    });
+    fillUndefinedTerrainsCheckbox.checked = true;
     const lineWidthNumber = d.addNumberInput ("Line width");
     lineWidthNumber.decimals = 0;
     lineWidthNumber.minimum = 1;
     const importButton = d.addButton ("Import OSM data");
     importButton.clicked.connect (function () {
         lineWidth = lineWidthNumber.value;
-        importOsm (geoJsonFilePicker.fileUrl, rotationNumber.value, fillPolygonsCheckbox.checked, useTerrainsCheckbox.checked, respectOSMRatioCheckbox.checked);
+        importOsm (geoJsonFilePicker.fileUrl, rotationNumber.value, fillPolygonsCheckbox.checked, useTerrainsCheckbox.checked, respectOSMRatioCheckbox.checked, emptyUndefinedTerrainsCheckbox.checked, fillUndefinedTerrainsCheckbox.checked);
     });
     d.show ();
 });
@@ -84,7 +98,7 @@ const urlToLocalPath = function (url) {
         .replace (/\//g, '\\');
 }
 
-const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains, respectOSMRatio) {
+const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains, respectOSMRatio, emptyUndefined, fillUndefined) {
     coordsCounter = 10000;  // DEBUG feature.
     const f = new TextFile (urlToLocalPath ("" + geoJsonFile));
     p = JSON.parse (f.readAll());
@@ -98,8 +112,10 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains, re
     const drawingTileId = tiles [0].id;
     plotTile = activeMap.usedTilesets()[0].findTile (drawingTileId);
     //debug ("plotTile="+plotTile);
+    const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
+    if (DEBUG) debug ("wangIdsToTiles="+JSON.stringify (wangIdsToTiles));
+    if (DEBUG) debug ("tileProbabilities="+JSON.stringify (tileProbabilities));
     const useWangCells = useTerrains;
-    const wangIdToTiles = {};
     if (useWangCells) {
         const drawWangId = tiles [0].tileset.wangSets [0].wangId (tiles [0]);
         if (!(drawWangId [TOP_RIGHT] === drawWangId [TOP_LEFT] && drawWangId [TOP_LEFT] === drawWangId [BOTTOM_LEFT] && drawWangId [BOTTOM_LEFT] === drawWangId [BOTTOM_RIGHT])) {
@@ -107,9 +123,6 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains, re
             return;
         }
         drawId = drawWangId [TOP_LEFT];
-        for (const tile of activeMap.usedTilesets()[0].tiles) {
-            wangIdToTiles ["" + tile.tileset.wangSets[0].wangId (tile)] = tile;
-        }
     }
     else {
         drawId = drawingTileId;    // Make this the selected tile in the selected tileset
@@ -342,11 +355,21 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains, re
                     changed = true;
                 }
                 if (changed) {
-                    // TODO FIXME This is wrong : there can be many tiles with the same wangId, we need to pick one at random
-                    const newTile = wangIdToTiles [""+wangId];
+                    debug ("wangIdsToTiles="+wangIdsToTiles);
+                    const newTile = pickRandomTile (wangId, wangIdsToTiles, tileProbabilities);
                     if (tile === null) debug ("newTile="+newTile);
                     if (newTile !== undefined) {
-                        edit.setTile (tileX, tileY, newTile);
+                        edit.setTile (tileX, tileY, tileById [newTile]);
+                    }
+                    else {
+                        if (emptyUndefined) {
+                            edit.setTile (tileX, tileY, null);
+                        }
+                        else {
+                            if (fillUndefined) {
+                                edit.setTile (tileX, tileY, tileById [pickRandomTile ([0, drawId, 0, drawId, 0, drawId, 0, drawId], wangIdsToTiles, tileProbabilities)]);
+                            }
+                        }
                     }
                 }
                 stop = (wangCounter--<0);
