@@ -53,7 +53,9 @@ let activeMap;
 let plotTile;
 let coordsCounter;
 let grid;
+
 let drawId; // This is either a tile ID or a wang color ID
+let lineWidth = 1;
 
 const importOSMAction = tiled.registerAction ("ImportOSM", function (action) {
     const d = new Dialog ("OSM import");
@@ -65,8 +67,12 @@ const importOSMAction = tiled.registerAction ("ImportOSM", function (action) {
     rotationNumber.value = 0;
     const fillPolygonsCheckbox = d.addCheckBox ("Fill polygons");
     const respectOSMRatioCheckbox = d.addCheckBox ("Respect OSM XY ratio");
+    const lineWidthNumber = d.addNumberInput ("Line width");
+    lineWidthNumber.decimals = 0;
+    lineWidthNumber.minimum = 1;
     const importButton = d.addButton ("Import OSM data");
     importButton.clicked.connect (function () {
+        lineWidth = lineWidthNumber.value;
         importOsm (geoJsonFilePicker.fileUrl, rotationNumber.value, fillPolygonsCheckbox.checked, useTerrainsCheckbox.checked, respectOSMRatioCheckbox.checked);
     });
     d.show ();
@@ -229,7 +235,24 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains, re
                     if (previousX !== currentX || previousY !== currentY) {
                 coordsCounter --;
                         //debug ("Line " + previousX + "," + previousY + "-" + currentX + "," + currentY);
-                        line (previousX, previousY, currentX, currentY, plot (drawId), useWangCells);
+                        if (lineWidth === 1) {
+                            line (previousX, previousY, currentX, currentY, plot (drawId), useWangCells);
+                        }
+                        else {
+                            const dx = currentX - previousX;
+                            const dy = currentY - previousY;
+                            const d = Math.sqrt (dx*dx+dy*dy);
+                            const bx = Math.floor (-lineWidth*dy/(d*2));
+                            const by = Math.floor (lineWidth*dx/(d*2));
+                            tiled.log ("border from " + (previousX+bx) + ","
+                                + (previousY+by) + " to " + (previousX-bx) + ","
+                                + (previousY-by));
+                            line (previousX+bx, previousY+by, 
+                                previousX-bx, previousY-by, 
+                                function (x, y) {
+                                    line (x, y, x+dx, y+dy, plot (drawId), useWangCells);
+                                }, useWangCells);
+                        }
                     }
                 }
                 previousX = currentX;
@@ -319,6 +342,7 @@ const importOsm = function (geoJsonFile, rotation, fillPolygons, useTerrains, re
                     changed = true;
                 }
                 if (changed) {
+                    // TODO FIXME This is wrong : there can be many tiles with the same wangId, we need to pick one at random
                     const newTile = wangIdToTiles [""+wangId];
                     if (tile === null) debug ("newTile="+newTile);
                     if (newTile !== undefined) {
