@@ -1,3 +1,6 @@
+import {analyzeTileSets, pickRandomTile} from './wang.mjs';
+
+
 const FEEDBACK_LAYER = "Transform-feedback";
 
 
@@ -20,41 +23,6 @@ const getProperty = function (propertyName) {
     }
 }
 
-
-const WANGID_SEPARATOR = ',';
-
-let wangIdToTiles;
-let tileIdToWang; // A map from tile id to wang id
-let activeMap;
-
-// TODO : check this is an EDGE wang set, not border or mixed
-const buildWangIdToTilesReference = function () {
-    wangIdToTiles = {};
-    tileIdToWang = {};
-    tileById = {};
-    if (!activeMap.isTileMap) {
-        throw new Error ("A tile map must be active");
-    }
-    debug ("activeMap="+activeMap);
-    const tilesets = activeMap.usedTilesets ();
-    const selectedRects = activeMap.selectedArea.get().rects;
-    debug (selectedRects);
-    for (const tileset of tilesets) {
-        for (const tile of tileset.tiles) {
-            tileById [tile.id] = tile;
-            for (const wangSet of tile.tileset.wangSets) {
-                const wangId = wangSet.wangId (tile);
-                tileIdToWang [tile.id] = wangId;   // FIXME There can be more than one wang id per tile??
-                debug ("Tile " + tile.id + " has wangId " + wangId);
-                const wangIdString = wangId.join (WANGID_SEPARATOR);
-                if (wangIdToTiles [wangIdString] === undefined)
-                    wangIdToTiles [wangIdString] = [];
-                if (!wangIdToTiles [wangIdString].some (e=>e==tile.id))
-                    wangIdToTiles [wangIdString].push (tile.id);
-            }
-        }
-    }
-}
 
 
 
@@ -83,7 +51,7 @@ const WANG_TOP_RIGHT = 1;
 const WANG_BOTTOM_LEFT = 5;
 const WANG_BOTTOM_RIGHT = 3;
 
-const buildWangCellsMap = function (tileMap) {
+const buildWangCellsMap = function (tileMap, tileIdToWang) {
     const boundingRect = tileMap.selectedArea.boundingRect;
     wangCells = [];
     for (let x = 0; x < boundingRect.width; x ++) {
@@ -104,30 +72,15 @@ const buildWangCellsMap = function (tileMap) {
 
 
 
-const pickRandomTile = function (wangId) {
-    const wangIdString = wangId.join (WANGID_SEPARATOR);
-    const distribution = [];
-    let totalProb = 0;
-    for (const replacementTileId of wangIdsToTiles [wangIdString]) {
-        distribution.push ({tileId: replacementTileId, probability: tileProbabilities [replacementTileId]});
-        totalProb += tileProbabilities [replacementTileId];
-    }
-    if (DEBUG) debug ("distribution="+JSON.stringify(distribution));
-    let pickedRandom = Math.random () * totalProb;
-    for (const distributed of distribution) {
-        pickedRandom -= distributed.probability;
-        if (pickedRandom <= 0) {
-            return distributed.tileId;
-        }
-    }
-}
+const wangCellsToMap = function (tileMap, tileById, wangIdsToTiles, tileProbabilities) {
+const WANGID_SEPARATOR = ',';
 
-const wangCellsToMap = function (tileMap) {
     const boundingRect = tileMap.selectedArea.boundingRect;
     for (const tileId in tileById) {
         debug ("tileById["+tileId+"]="+tileById[tileId]);
     }
     const edits = {};
+    debug (tileMap.selectedLayers.length + " layers selected");
     for (const layer of tileMap.selectedLayers) {   // TODO : use visible layers instead of selected ones
                 // FIXME This works only on ONE layer. we must have as many wangCells arrays as we have layers
         const edit = layer.edit ();
@@ -135,7 +88,8 @@ const wangCellsToMap = function (tileMap) {
             for (let y = 0; y < wangCells [0].length / 2; y ++) {
                 const wangId = [0, wangCells [x * 2 + 1] [y * 2], 0, wangCells [x * 2 + 1] [y * 2 + 1], 
                     0, wangCells [x * 2] [y * 2 + 1], 0, wangCells [x * 2] [y * 2]];
-                edit.setTile (x + boundingRect.x, y + boundingRect.y, tileById [pickRandomTile (wangId)]);
+                const r = pickRandomTile (wangId, wangIdsToTiles, tileProbabilities);
+                edit.setTile (x + boundingRect.x, y + boundingRect.y, tileById [r]);
             }
         }
         edit.apply ();
@@ -160,29 +114,6 @@ const scale = function (matrix, scaleX, scaleY) {
     }
     return output;
 }
-
-let wangIdsToTiles;
-let tileById;
-let tileProbabilities;
-
-const analyzeTileSet = function (tileset) {
-    for (const tile of tileset.tiles) {
-        debug ("Tile " + tile.id + " has probability " + tile.probability);
-        tileProbabilities [tile.id] = tile.probability;
-        tileById [tile.id] = tile;
-        // ..choose tiles that have a matching WangId..
-        for (const wangSet of tile.tileset.wangSets) {
-            const wangId = wangSet.wangId (tile);
-            debug ("Tile " + tile.id + " has wangId " + wangId);
-            const wangIdString = wangId.join (',');
-            if (wangIdsToTiles [wangIdString] === undefined)
-                wangIdsToTiles [wangIdString] = [];
-            if (!wangIdsToTiles [wangIdString].some (e=>e==tile.id))
-                wangIdsToTiles [wangIdString].push (tile.id);
-        }
-    }
-}
-
 const randomizeSelectedArea = function () {
     // Go through the selected area..
     const activeMap = tiled.activeAsset;
@@ -191,12 +122,7 @@ const randomizeSelectedArea = function () {
     const selectedRects = activeMap.selectedArea.get().rects;
     debug (selectedRects);
 
-    wangIdsToTiles = {};
-    tileById = {};
-    tileProbabilities = {};
-    for (const tileset of tilesets) {   // FIXME can be an issue if there are more than one tileset with tiles having the same id
-        analyzeTileSet (tileset);
-    }
+    const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
     activeMap.macro ("Randomize", function(){
     debug ("Randomizing..");
     if (DEBUG) debug (JSON.stringify (tileProbabilities));
@@ -207,7 +133,7 @@ const randomizeSelectedArea = function () {
                     const edit = layer.edit ();
                     const tile = layer.tileAt (x, y);
                     for (const wangSet of tile.tileset.wangSets) {
-                        edit.setTile (x, y, tileById [pickRandomTile (wangSet.wangId (tile))]);
+                        edit.setTile (x, y, tileById [pickRandomTile (wangSet.wangId (tile), wangIdsToTiles, tileProbabilities)]);
                     }
                     edit.apply();
                 }
@@ -226,12 +152,13 @@ const randomizeSelectedArea = function () {
 const transformDialog = tiled.registerAction ("TransformTerrainsDialog", function (action) {
     const d = new Dialog ("Transform Terrains");
     let transformCombo;
+    let activeMap;
     let useTerrainsCheckbox;
     const selectTransformInputButton = d.addButton ("Select the area for transformation");
     selectTransformInputButton.clicked.connect (function () {
         activeMap = tiled.activeAsset;
-        buildWangIdToTilesReference ();
-        buildWangCellsMap (activeMap);
+        const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
+        buildWangCellsMap (activeMap, tileIdToWang);
         transformSelectedButton.enabled = true;
     });
     transformCombo = d.addComboBox ("Transforms", ["Horizontal symmetry", "Vertical symmetry", "Rotate left", "Rotate right", "Rotate 180°"]);
@@ -268,13 +195,11 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
                 throw new Error ("Invalid index : " + transformCombo.currentIndex);
         }
         if (DEBUG) debug ("wangCells="+JSON.stringify (wangCells));
-        wangIdsToTiles = {};
-        tileById = {};
-        tileProbabilities = {};
-        for (const tileset of activeMap.usedTilesets()) {   // FIXME can be an issue if there are more than one tileset with tiles having the same id
-            analyzeTileSet (tileset);
-        }
-        wangCellsToMap (activeMap);
+        debug ("activeMap="+activeMap);
+        const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
+        debug ("activeMap="+activeMap);
+        wangCellsToMap (activeMap, tileById, wangIdsToTiles, tileProbabilities);
+        debug ("activeMap="+activeMap);
         transformSelectedButton.enabled = false;
     });
     transformSelectedButton.enabled = false;
@@ -282,8 +207,8 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
     const scalingSelectButton = d.addButton ("Select the area to scale up");
     scalingSelectButton.clicked.connect (function () {
         activeMap = tiled.activeAsset;
-        buildWangIdToTilesReference ();
-        buildWangCellsMap (activeMap);
+        const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
+        buildWangCellsMap (activeMap, tileIdToWang);
         scalingApplyButton.enabled = true;
     });
     const xScalingSpinner = d.addNumberInput ("X Scaling");
@@ -299,13 +224,8 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
             tiled.alert ("The input selection for scaling must be in the same map as the output");
         }
         wangCells = scale (wangCells, xScalingSpinner.value, yScalingSpinner.value);
-        wangIdsToTiles = {};
-        tileById = {};
-        tileProbabilities = {};
-        for (const tileset of activeMap.usedTilesets()) {   // FIXME can be an issue if there are more than one tileset with tiles having the same id
-            analyzeTileSet (tileset);
-        }
-        wangCellsToMap (activeMap);
+        const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
+        wangCellsToMap (activeMap, tileById, wangIdsToTiles, tileProbabilities);
         scalingApplyButton.enabled = false;
     });
     d.addSeparator ();
