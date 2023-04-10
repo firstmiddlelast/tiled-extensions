@@ -1,10 +1,6 @@
 import {analyzeTileSets, pickRandomTile, buildWangCellsMap, wangCellsToMap} from './wang.mjs';
 
 
-const FEEDBACK_LAYER = "Transform-feedback";
-
-
-
 const DEBUG = false;
 let debug;
 if (DEBUG) {
@@ -12,15 +8,6 @@ if (DEBUG) {
 }
 else {
     debug = function (){};
-}
-
-
-
-const getProperty = function (propertyName) {
-    switch (propertyName) {
-        default:
-            throw new Error ("Don't know how to get property " + propertyName);
-    }
 }
 
 
@@ -60,6 +47,42 @@ const scale = function (matrix, scaleX, scaleY) {
     }
     return output;
 }
+
+
+/**
+ *
+ * Every two (because there are 2 wangcells for 1 tile) rows, add rows that are identical to the last wangId row are added. Same for columns. 
+ */
+const inflate = function (matrix, addX, addY) {
+    let output = [];
+    let outputX = 0;
+    let outputY;
+    for (let x = 0; x < matrix.length; x ++) {
+        output [outputX] = [];
+        for (let y = 0; y < matrix [0].length; y ++) {
+            output [outputX] [y] = matrix [x] [y];
+        }
+        outputX ++;
+        if (x & 1 !== 0 && x !== matrix.length - 1) {
+            for (let i = 0; i < addX; i ++) {
+                output [outputX] = [];
+                for (let y = 0; y < matrix [0].length; y ++) {
+                    output [outputX] [y] = matrix [x] [y];
+                }
+                outputX ++;
+            }
+        }
+    }
+    if (addY > 0) {
+        output = transpose (output);
+        output = inflate (output, addY, 0);
+        output = transpose (output);
+    }
+    return output;
+}
+
+tiled.log (JSON.stringify (inflate ([[0,1,2],[3,4,5]], 0, 2)));
+
 const randomizeSelectedArea = function () {
     // Go through the selected area..
     const activeMap = tiled.activeAsset;
@@ -151,26 +174,30 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
     });
     transformSelectedButton.enabled = false;
     d.addSeparator ();
-    const scalingSelectButton = d.addButton ("Select the area to scale up");
+    const scalingSelectButton = d.addButton ("Select the area to scale up or inflate");
     scalingSelectButton.clicked.connect (function () {
         activeMap = tiled.activeAsset;
         const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
         wangCells = buildWangCellsMap (activeMap, tileIdToWang);
         scalingApplyButton.enabled = true;
     });
-    const xScalingSpinner = d.addNumberInput ("X Scaling");
+    const scaleOrInflate = d.addCheckBox ("Scale/inflate");
+    const xScalingSpinner = d.addNumberInput ("X");
     xScalingSpinner.decimals = 0;
-    xScalingSpinner.minimum = 1;
-    const yScalingSpinner = d.addNumberInput ("Y Scaling");
+    const yScalingSpinner = d.addNumberInput ("Y");
     yScalingSpinner.decimals = 0;
-    yScalingSpinner.minimum = 1;
-    const scalingApplyButton = d.addButton ("Scale up into the selected area");
+    const scalingApplyButton = d.addButton ("Scale up / inflate into selected");
     scalingApplyButton.enabled = false;
     scalingApplyButton.clicked.connect (function () {
         if (tiled.activeAsset !== activeMap) {
             tiled.alert ("The input selection for scaling must be in the same map as the output");
         }
-        wangCells = scale (wangCells, xScalingSpinner.value, yScalingSpinner.value);
+        if (scaleOrInflate.checked) {
+            wangCells = scale (wangCells, xScalingSpinner.value, yScalingSpinner.value);
+        }
+        else {
+            wangCells = inflate (wangCells, xScalingSpinner.value, yScalingSpinner.value * 2);
+        }
         const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
         wangCellsToMap (wangCells, activeMap, tileById, wangIdsToTiles, tileProbabilities);
         scalingApplyButton.enabled = false;
