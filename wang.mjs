@@ -9,9 +9,14 @@ else {
 
 
 const WANGID_SEPARATOR = ',';
+// Indexes of the numbers in the wang ids matching the position of the square
+const TOP_LEFT = 7;
+const TOP_RIGHT = 1;
+const BOTTOM_LEFT = 5;
+const BOTTOM_RIGHT = 3;
 
 
-// TODO : check this is an EDGE wang set, not border or mixed
+// TODO : check this is a CORNER wang set, not edge or mixed
 
 export function analyzeTileSets (map) {
     const wangIdsToTiles = {};
@@ -58,5 +63,47 @@ export function pickRandomTile (wangId, wangIdsToTiles, tileProbabilities) {
         if (pickedRandom <= 0) {
             return distributed.tileId;
         }
+    }
+}
+
+export function buildWangCellsMap (tileMap, tileIdToWang) {
+    const boundingRect = tileMap.selectedArea.boundingRect;
+    const wangCells = [];
+    for (let x = 0; x < boundingRect.width; x ++) {
+        wangCells [x * 2] = new Array (boundingRect.height * 2);
+        wangCells [x * 2 + 1] = new Array (boundingRect.height * 2);
+        for (let y = 0; y < boundingRect.height; y ++) {
+            for (const layer of tileMap.selectedLayers) {   // TODO : use visible layers instead of selected ones
+                // FIXME This works only on ONE layer. we must have as many wangCells arrays as we have layers
+                const wangTile = tileIdToWang [layer.tileAt (x + boundingRect.x, y + boundingRect.y).id];
+                wangCells [x * 2] [y * 2] = wangTile [TOP_LEFT];
+                wangCells [x * 2 + 1] [y * 2] = wangTile [TOP_RIGHT];
+                wangCells [x * 2] [y * 2 + 1] = wangTile [BOTTOM_LEFT];
+                wangCells [x * 2 + 1] [y * 2 + 1] = wangTile [BOTTOM_RIGHT];
+            }
+        }
+    }
+    return wangCells;
+}
+
+export function wangCellsToMap (wangCells, tileMap, tileById, wangIdsToTiles, tileProbabilities) {
+    const boundingRect = tileMap.selectedArea.boundingRect;
+    for (const tileId in tileById) {
+        debug ("tileById["+tileId+"]="+tileById[tileId]);
+    }
+    const edits = {};
+    debug (tileMap.selectedLayers.length + " layers selected");
+    for (const layer of tileMap.selectedLayers) {   // TODO : use visible layers instead of selected ones
+                // FIXME This works only on ONE layer. we must have as many wangCells arrays as we have layers
+        const edit = layer.edit ();
+        for (let x = 0; x < wangCells.length / 2; x ++) {
+            for (let y = 0; y < wangCells [0].length / 2; y ++) {
+                const wangId = [0, wangCells [x * 2 + 1] [y * 2], 0, wangCells [x * 2 + 1] [y * 2 + 1], 
+                    0, wangCells [x * 2] [y * 2 + 1], 0, wangCells [x * 2] [y * 2]];
+                const r = pickRandomTile (wangId, wangIdsToTiles, tileProbabilities);
+                edit.setTile (x + boundingRect.x, y + boundingRect.y, tileById [r]);
+            }
+        }
+        edit.apply ();
     }
 }

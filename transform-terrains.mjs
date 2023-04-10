@@ -1,4 +1,4 @@
-import {analyzeTileSets, pickRandomTile} from './wang.mjs';
+import {analyzeTileSets, pickRandomTile, buildWangCellsMap, wangCellsToMap} from './wang.mjs';
 
 
 const FEEDBACK_LAYER = "Transform-feedback";
@@ -41,58 +41,6 @@ function transpose (matrix) {
     return grid;
 }
 
-
-
-
-let wangCells = [];
-// Indexes of the numbers in the wang ids matching the position of the square
-const WANG_TOP_LEFT = 7;
-const WANG_TOP_RIGHT = 1;
-const WANG_BOTTOM_LEFT = 5;
-const WANG_BOTTOM_RIGHT = 3;
-
-const buildWangCellsMap = function (tileMap, tileIdToWang) {
-    const boundingRect = tileMap.selectedArea.boundingRect;
-    wangCells = [];
-    for (let x = 0; x < boundingRect.width; x ++) {
-        wangCells [x * 2] = new Array (boundingRect.height * 2);
-        wangCells [x * 2 + 1] = new Array (boundingRect.height * 2);
-        for (let y = 0; y < boundingRect.height; y ++) {
-            for (const layer of tileMap.selectedLayers) {   // TODO : use visible layers instead of selected ones
-                // FIXME This works only on ONE layer. we must have as many wangCells arrays as we have layers
-                const wangTile = tileIdToWang [layer.tileAt (x + boundingRect.x, y + boundingRect.y).id];
-                wangCells [x * 2] [y * 2] = wangTile [WANG_TOP_LEFT];
-                wangCells [x * 2 + 1] [y * 2] = wangTile [WANG_TOP_RIGHT];
-                wangCells [x * 2] [y * 2 + 1] = wangTile [WANG_BOTTOM_LEFT];
-                wangCells [x * 2 + 1] [y * 2 + 1] = wangTile [WANG_BOTTOM_RIGHT];
-            }
-        }
-    }
-}
-
-
-
-const wangCellsToMap = function (tileMap, tileById, wangIdsToTiles, tileProbabilities) {
-    const boundingRect = tileMap.selectedArea.boundingRect;
-    for (const tileId in tileById) {
-        debug ("tileById["+tileId+"]="+tileById[tileId]);
-    }
-    const edits = {};
-    debug (tileMap.selectedLayers.length + " layers selected");
-    for (const layer of tileMap.selectedLayers) {   // TODO : use visible layers instead of selected ones
-                // FIXME This works only on ONE layer. we must have as many wangCells arrays as we have layers
-        const edit = layer.edit ();
-        for (let x = 0; x < wangCells.length / 2; x ++) {
-            for (let y = 0; y < wangCells [0].length / 2; y ++) {
-                const wangId = [0, wangCells [x * 2 + 1] [y * 2], 0, wangCells [x * 2 + 1] [y * 2 + 1], 
-                    0, wangCells [x * 2] [y * 2 + 1], 0, wangCells [x * 2] [y * 2]];
-                const r = pickRandomTile (wangId, wangIdsToTiles, tileProbabilities);
-                edit.setTile (x + boundingRect.x, y + boundingRect.y, tileById [r]);
-            }
-        }
-        edit.apply ();
-    }
-}
 
 
 
@@ -148,6 +96,7 @@ const randomizeSelectedArea = function () {
 
 
 const transformDialog = tiled.registerAction ("TransformTerrainsDialog", function (action) {
+    let wangCells = [];
     const d = new Dialog ("Transform Terrains");
     let transformCombo;
     let activeMap;
@@ -156,7 +105,7 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
     selectTransformInputButton.clicked.connect (function () {
         activeMap = tiled.activeAsset;
         const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
-        buildWangCellsMap (activeMap, tileIdToWang);
+        wangCells = buildWangCellsMap (activeMap, tileIdToWang);
         transformSelectedButton.enabled = true;
     });
     transformCombo = d.addComboBox ("Transforms", ["Horizontal symmetry", "Vertical symmetry", "Rotate left", "Rotate right", "Rotate 180°"]);
@@ -196,7 +145,7 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
         debug ("activeMap="+activeMap);
         const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
         debug ("activeMap="+activeMap);
-        wangCellsToMap (activeMap, tileById, wangIdsToTiles, tileProbabilities);
+        wangCellsToMap (wangCells, activeMap, tileById, wangIdsToTiles, tileProbabilities);
         debug ("activeMap="+activeMap);
         transformSelectedButton.enabled = false;
     });
@@ -206,7 +155,7 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
     scalingSelectButton.clicked.connect (function () {
         activeMap = tiled.activeAsset;
         const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
-        buildWangCellsMap (activeMap, tileIdToWang);
+        wangCells = buildWangCellsMap (activeMap, tileIdToWang);
         scalingApplyButton.enabled = true;
     });
     const xScalingSpinner = d.addNumberInput ("X Scaling");
@@ -223,7 +172,7 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
         }
         wangCells = scale (wangCells, xScalingSpinner.value, yScalingSpinner.value);
         const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
-        wangCellsToMap (activeMap, tileById, wangIdsToTiles, tileProbabilities);
+        wangCellsToMap (wangCells, activeMap, tileById, wangIdsToTiles, tileProbabilities);
         scalingApplyButton.enabled = false;
     });
     d.addSeparator ();
