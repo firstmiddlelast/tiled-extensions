@@ -1,5 +1,8 @@
 import seedrandom from "./seedrandom.mjs";
 import OverlappingModel from './overlapping-model.mjs';
+import {wangCellsToMap} from './wang.mjs';
+import {analyzeTileSets} from './wang.mjs';
+import {buildWangCellsMap} from './wang.mjs';
 
 const FEEDBACK_LAYER = "WFC-feedback";
 
@@ -23,11 +26,12 @@ let data;
 
 
 const DEBUG = false;
+let debug;
 if (DEBUG) {
-    tiled.debug = tiled.log;
+    debug = tiled.log;
 }
 else {
-    tiled.debug = function (){};
+    debug = function (){};
 }
 
 
@@ -66,7 +70,7 @@ const makeTileReference = function (x, y, layers) {
     for (const layer of layers) {
         if (layer !== null && layer.visible) {
             const tile = layer.tileAt (x, y);
-            if (DEBUG) tiled.debug ("x="+x+",y="+y+",layer#"+layer.id);
+            if (DEBUG) debug ("x="+x+",y="+y+",layer#"+layer.id);
             if (tile !== null) {
                 tiles [tile.id] = tile;
                 layersById [layer.id] = layer;
@@ -82,6 +86,11 @@ const tilesFromReference = function (tileReference) {
     return JSON.parse (tileReference);
 }
 
+
+let tileById; 
+let wangIdsToTiles; 
+let tileProbabilities;
+let tileIdToWang;
 
 /**
  * Creates tile references for all the selected tiled ; stores input data
@@ -100,45 +109,61 @@ const selectInput = function () {
     const sourceY = activeMap.selectedArea.boundingRect.y;
     sourceWidth = activeMap.selectedArea.boundingRect.width;
     sourceHeight = activeMap.selectedArea.boundingRect.height;
-    data = new Uint8Array (sourceWidth * sourceHeight * 4);
     
 
+    const useTerrains = useTerrainsCheckbox.checked;
 
-    pixelId = TRANSPARENT_PIXEL_ID + 1;    // 0 is reserved for transparent (unresolved or impossible) pixels in the output
-    pixelIds = [];
-    tiles = {};
-    tileReferences = [];
-    layersById = {};
 
-    if (DEBUG) tiled.debug ("sourceWidth="+sourceWidth+",sourceHeight="+sourceHeight);
-    for (let x = 0; x < sourceWidth; x ++) {
-        for (let y = 0; y < sourceHeight; y ++) {
-            const tileReference = makeTileReference (x + sourceX, y + sourceY, activeMap.layers);
-            tiled.debug ("tileReference="+tileReference);
-            if (pixelIds [tileReference] === undefined) {
-                tileReferences [pixelId] = tileReference;
-                tiled.debug ("new tile reference=" + tileReference);
-                pixelIds [tileReference] = pixelId;
-                tiled.debug ("new pixel id :"+pixelIds [tileReference]);
-                pixelId ++;
+    if (!useTerrains) {
+        data = new Uint8Array (sourceWidth * sourceHeight * 4);
+        pixelId = TRANSPARENT_PIXEL_ID + 1;    // 0 is reserved for transparent (unresolved or impossible) pixels in the output
+        pixelIds = [];
+        tiles = {};
+        tileReferences = [];
+        layersById = {};
+
+        if (DEBUG) debug ("sourceWidth="+sourceWidth+",sourceHeight="+sourceHeight);
+        for (let x = 0; x < sourceWidth; x ++) {
+            for (let y = 0; y < sourceHeight; y ++) {
+                const tileReference = makeTileReference (x + sourceX, y + sourceY, activeMap.layers);
+                debug ("tileReference="+tileReference);
+                if (pixelIds [tileReference] === undefined) {
+                    tileReferences [pixelId] = tileReference;
+                    debug ("new tile reference=" + tileReference);
+                    pixelIds [tileReference] = pixelId;
+                    debug ("new pixel id :"+pixelIds [tileReference]);
+                    pixelId ++;
+                }
+                const dataPixelId = pixelIds [tileReference];
+                debug ("setting data @"+x+","+y+" as "+dataPixelId);
+                data [4 * (x + y * sourceWidth)] = dataPixelId & 255;
+                data [1 + 4 * (x + y * sourceWidth)] = dataPixelId >> 8 & 255;
             }
-            const dataPixelId = pixelIds [tileReference];
-            tiled.debug ("setting data @"+x+","+y+" as "+dataPixelId);
-            data [4 * (x + y * sourceWidth)] = dataPixelId & 255;
-            data [1 + 4 * (x + y * sourceWidth)] = dataPixelId >> 8 & 255;
+        }
+
+        if (DEBUG) {
+            for (const tileref in tileReferences) {
+                debug ("tileref="+tileref+", ref="+tileReferences[tileref]);
+            }
+            for (const pixelid in pixelIds) {
+                debug ("pixid="+pixelid+",id="+pixelIds[pixelid]);
+            }
+            for (const layerId in layersById) {
+                debug ("Layer id="+layerId+"="+layersById[layerId]);
+            }
         }
     }
-
-    if (DEBUG) {
-        for (const tileref in tileReferences) {
-            tiled.debug ("tileref="+tileref+", ref="+tileReferences[tileref]);
+    else {
+        data = new Uint8Array (sourceWidth * 2 * sourceHeight * 2 * 4);
+        [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
+        const wangCells = buildWangCellsMap (activeMap, tileIdToWang);
+        debug ("wangCells="+JSON.stringify (wangCells));
+        for (let x = 0; x < sourceWidth * 2; x ++) {
+            for (let y = 0; y < sourceHeight * 2; y ++) {
+                data [4 * (x + y * sourceWidth * 2)] = wangCells [x] [y];
+            }
         }
-        for (const pixelid in pixelIds) {
-            tiled.debug ("pixid="+pixelid+",id="+pixelIds[pixelid]);
-        }
-        for (const layerId in layersById) {
-            tiled.debug ("Layer id="+layerId+"="+layersById[layerId]);
-        }
+                
     }
     tiled.log ("Done.");
 }
@@ -192,22 +217,32 @@ const outputToSelection = function () {
     const outputY = activeMap.selectedArea.boundingRect.y;
 
     const randomSeed = getProperty ('RANDOM_SEED');
-    tiled.debug ("randomSeed="+randomSeed);
+    debug ("randomSeed="+randomSeed);
     const random = (randomSeed === undefined || randomSeed === null || randomSeed === '') ? Math.random : seedrandom (randomSeed);
-    tiled.debug ("random="+random);
+    debug ("random="+random);
 
     // TODO : change the constructor signature to take a single properties object instead of numerous parameters
     const isSourceCircular = 
         (getProperty("SOURCE_X_CIRCULAR") || getProperty("SOURCE_Y_CIRCULAR")) === true;
     const isOutputCircular = 
         (getProperty("OUTPUT_X_CIRCULAR") || getProperty("OUTPUT_Y_CIRCULAR")) === true;
-    tiled.debug ("sourceWidth="+sourceWidth+",sourceHeight="+sourceHeight+",N="+N+",outputWidth="+outputWidth+",outputHeight="+outputHeight+",SYMMETRY="+SYMMETRY+",isSourceCircular="+isSourceCircular+",isOutputCircular="+isOutputCircular);
+    debug ("sourceWidth="+sourceWidth+",sourceHeight="+sourceHeight+",N="+N+",outputWidth="+outputWidth+",outputHeight="+outputHeight+",SYMMETRY="+SYMMETRY+",isSourceCircular="+isSourceCircular+",isOutputCircular="+isOutputCircular);
 
 
+    const useTerrains = useTerrainsCheckbox.checked;
 
-    let model = new OverlappingModel (data, sourceWidth, sourceHeight, N, 
-        outputWidth, outputHeight, isSourceCircular, isOutputCircular, 
-        SYMMETRY);
+
+    let model;
+    if (!useTerrains) {
+        model = new OverlappingModel (data, sourceWidth, sourceHeight, N, 
+            outputWidth, outputHeight, isSourceCircular, isOutputCircular, 
+            SYMMETRY);
+    }
+    else {
+        model = new OverlappingModel (data, sourceWidth * 2, sourceHeight * 2, N, 
+            outputWidth * 2, outputHeight * 2, isSourceCircular, isOutputCircular, 
+            SYMMETRY);
+    }
     // TODO : add a new parameter to include contradictory and impossible pixels in the feedback layer
     
 
@@ -217,37 +252,50 @@ const outputToSelection = function () {
     if (generate) {
         tiled.log ("Generation success.");
         const resultData = model.graphics ();
-        activeMap.macro ("WFC generation", function () {
-            const edits = [];
-            for (const layerId in layersById) {
-                edits [layerId] = layersById[layerId].edit ();
-            }
-            for (let x = 0; x < outputWidth; x ++) {
-                for (let y = 0; y < outputHeight; y ++) {
-                    const outputPixelId = 
-                        resultData [4 * (x + y * outputWidth)] +
-                        (resultData [1 + 4 * (x + y * outputWidth)] << 8);
-                    if (DEBUG) tiled.debug ("outputPixelId="+outputPixelId);
-                    if (outputPixelId !== TRANSPARENT_PIXEL_ID) {
-                        if (DEBUG) tiled.debug ("tileReferences[outputPixelId]="+tileReferences [outputPixelId]);
-                        const visibleTiles = tilesFromReference (tileReferences [outputPixelId]);
-                        for (const tile of visibleTiles) {
-                            edits [tile.layerId].setTile (outputX + x, outputY + y, tiles [tile.id]);
+        if (!useTerrains) {
+            activeMap.macro ("WFC generation", function () {
+                const edits = [];
+                for (const layerId in layersById) {
+                    edits [layerId] = layersById[layerId].edit ();
+                }
+                for (let x = 0; x < outputWidth; x ++) {
+                    for (let y = 0; y < outputHeight; y ++) {
+                        const outputPixelId = 
+                            resultData [4 * (x + y * outputWidth)] +
+                            (resultData [1 + 4 * (x + y * outputWidth)] << 8);
+                        if (DEBUG) debug ("outputPixelId="+outputPixelId);
+                        if (outputPixelId !== TRANSPARENT_PIXEL_ID) {
+                            if (DEBUG) debug ("tileReferences[outputPixelId]="+tileReferences [outputPixelId]);
+                            const visibleTiles = tilesFromReference (tileReferences [outputPixelId]);
+                            for (const tile of visibleTiles) {
+                                edits [tile.layerId].setTile (outputX + x, outputY + y, tiles [tile.id]);
+                            }
                         }
-                    }
-                    else {
-                        if (DEBUG) tiled.debug ("Impossible pixel @" + x + "," + y);
-                        // output a transparent tile on all the layers
-                        for (const layerId in layersById) {
-                            edits [layerId].setTile (outputX + x, outputY + y, null);
+                        else {
+                            if (DEBUG) debug ("Impossible pixel @" + x + "," + y);
+                            // output a transparent tile on all the layers
+                            for (const layerId in layersById) {
+                                edits [layerId].setTile (outputX + x, outputY + y, null);
+                            }
                         }
                     }
                 }
+                for (const edit in edits) {
+                    edits [edit].apply();
+                }
+            });
+        }
+        else {
+            const wangCells = [];
+            for (let x = 0; x < outputWidth * 2; x ++) {
+                wangCells [x] = [];
+                for (let y = 0; y < outputHeight * 2; y ++) {
+                    const outputWangColor = resultData [4 * (x + y * outputWidth * 2)];
+                    wangCells [x] [y] = outputWangColor;
+                }
             }
-            for (const edit in edits) {
-                edits [edit].apply();
-            }
-        });
+            wangCellsToMap (wangCells, activeMap, tileById, wangIdsToTiles, tileProbabilities);
+        }
     }
     else {
         tiled.warn ("Generation ended in a contradiction. You may try again. ");
@@ -266,6 +314,7 @@ let NSlider;
 let counterNumber;
 let randomSeedText;
 let selectOutputButton;
+let useTerrainsCheckbox;
 
 const wfcDialog = tiled.registerAction ("WFCDialog", function (action) {
     const d = new Dialog ("Wave Function Collapse");
@@ -275,6 +324,7 @@ const wfcDialog = tiled.registerAction ("WFCDialog", function (action) {
         selectOutputButton.enabled = true;
         selectInput();
     });
+    useTerrainsCheckbox = d.addCheckBox ("Use Terrains");
     isSourceCircularCheckbox = d.addCheckBox ("Circular input");
     isOutputCircularCheckbox = d.addCheckBox ("Circular output");
     symmetrySlider = d.addSlider ("Symmetry and rotations");
