@@ -55,11 +55,13 @@ Select the rectangular region you want to fill with the algoritm and press the "
 
 Tips : 
 * The larger the pattern size, the more the chances of a failure ("contradiction"). 
+* The more symmetries / rotations are added, the less constraints there are in the output. That may balance out the increase in pattern size. 
 * The algorithm likes repetitive patterns on (very) small numbers of tiles. Since all the visible layers are part of a visible tile for the algorithm, try to keep visible layers to 2 or 3 at most. See [interactive examples](http://www.kchapelier.com/wfc-example/overlapping-model.html) of the working algorithm. 
 * Transparent tiles in the input do not overwrite existing tiles when they are generated in the output selection. 
 
 TODOs : 
-* Use terrains information for building the patterns
+* Use terrains information for building the patterns in the tiled model
 * Generate around existing map tiles
 * Backtracking
 * Add a built-in list of sample patterns like the mazes in the interactive examples
+* Allow step by step generation
