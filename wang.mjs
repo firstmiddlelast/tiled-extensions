@@ -10,10 +10,10 @@ else {
 
 const WANGID_SEPARATOR = ',';
 // Indexes of the numbers in the wang ids matching the position of the square
-const TOP_LEFT = 7;
-const TOP_RIGHT = 1;
-const BOTTOM_LEFT = 5;
-const BOTTOM_RIGHT = 3;
+export const TOP_LEFT = 7;
+export const TOP_RIGHT = 1;
+export const BOTTOM_LEFT = 5;
+export const BOTTOM_RIGHT = 3;
 
 
 // TODO : check this is a CORNER wang set, not edge or mixed
