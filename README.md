@@ -8,7 +8,7 @@ _Prototypes_ may be downloaded, but they are still prototypes, and may probably 
 _Work In Progresses_ may be downloaded but will most probably be modified frequently. 
 
 ## path-tool.mjs - status : Working Prototype
-requires `measuring-tape.png`, `line.mjs`, `astar.mjs` and `fill.mjs`.
+requires `wang.mjs`, `measuring-tape.png`, `line.mjs`, `astar.mjs` and `fill.mjs`.
 
 Adds a tool for selecting and measuring paths and surfaces, results in the status bar. S=surface, D(diag) = path length using diagonals, D(rect) = path length without diagonals, D(line) = distance from the tile clicked to the current tile when going in a direct line, D(rect) = distance when going only vertical or horizontal. 
 ### Path measurement 
