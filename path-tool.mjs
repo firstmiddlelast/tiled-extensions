@@ -12,26 +12,34 @@ import line from './line.mjs';
 import Graph from './astar.mjs';
 import {astar} from './astar.mjs';
 import fill from './fill.mjs';
+import {TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT} from './wang.mjs';
 
 
 let wangIdsCache = [];
-let log = console.log;
+const DEBUG = false;
+let debug;
+if (DEBUG) {
+    debug = tiled.log;
+}
+else {
+    debug = function () {};
+}
 
 
 const findWangIds = function (tile) {
     if (tile === null) {
         return [];
     }
-    if (wangIdsCache [tile] !== undefined) {
-        return wangIdsCache [tile]; 
+    if (wangIdsCache [tile.id] !== undefined) {
+        return wangIdsCache [tile.id]; 
     }
     else {
         const wangIds = [];
         for (const wSet of tile.tileset.wangSets) {
             wangIds.push (wSet.wangId (tile));  // FIXME Will only return coherent results if the tileSet has only one wangSet : the wangId is relative to a wangSet, not a tileSet. 
         }
-        //log ("tile "+ tile + " has wangids"+wangIds);
-        wangIdsCache [tile] = wangIds;
+        //debug ("tile "+ tile + " has wangids"+wangIds);
+        wangIdsCache [tile.id] = wangIds;
         return wangIds;
     }
 }
@@ -78,7 +86,7 @@ const pathTool = tiled.registerTool ("Path", {
     updateStatusInfo: function () {
         currentTileX = this.tilePosition.x;
         currentTileY = this.tilePosition.y;
-        //log ("tilePosition="+this.tilePosition);
+        //debug ("tilePosition="+this.tilePosition);
         let lineDistance = -1;  // The line function counts the first pixel, but we expect the distance to be 0 in this case
         if (isDragging && dragsPaths) {
             line (this.tilePosition.x, this.tilePosition.y, startDragX, startDragY, function () {
@@ -86,23 +94,29 @@ const pathTool = tiled.registerTool ("Path", {
             }, !useDiagonals);
 
 
-            const diagStart = diagGraph.grid [startDragX] [startDragY];
-            const rectStart = rectGraph.grid [startDragX] [startDragY];
+            const diagStart = diagGraph.grid [startDragX * (useTerrains? 2 : 1)] [startDragY * (useTerrains? 2 : 1)]; // FIXME : *2 if useTerrains
+            const rectStart = rectGraph.grid [startDragX * (useTerrains? 2 : 1)] [startDragY * (useTerrains? 2 : 1)]; // FIXME : *2 if useTerrains
             let astarDiagResult = [];
             let astarRectResult = [];
             if (this.tilePosition.x < layer.width && this.tilePosition.x >= 0 
                 && this.tilePosition.y < layer.height && this.tilePosition.y >= 0) {
-                const diagEnd = diagGraph.grid [this.tilePosition.x] [this.tilePosition.y];
-                const rectEnd = rectGraph.grid [this.tilePosition.x] [this.tilePosition.y];
+                const diagEnd = diagGraph.grid [this.tilePosition.x * (useTerrains? 2 : 1)] [this.tilePosition.y * (useTerrains? 2 : 1)]; // FIXME : *2 if useTerrains
+                const rectEnd = rectGraph.grid [this.tilePosition.x * (useTerrains? 2 : 1)] [this.tilePosition.y * (useTerrains? 2 : 1)]; // FIXME : *2 if useTerrains
                 // See list of heuristics: http://theory.stanford.edu/~amitp/GameProgramming/Heuristics.html
                 astarDiagResult = astar.search (diagGraph, diagStart, diagEnd, {closest: true, heuristic: astar.heuristics.diagonal});
                 astarRectResult = astar.search (rectGraph, rectStart, rectEnd, {closest: true});
                 const thisMap = this.map;   // Required because in the function below, this.map is undefined. 
                 const astarSelection = (useDiagonals)? astarDiagResult : astarRectResult;
+                debug ("astarSelection.length="+astarSelection.length);
+                // TODO FIXME : if useTerrains, convert wangCells to tile cells
                 this.map.macro ("Select path", function () {
                     thisMap.selectedArea.subtract (thisMap.selectedArea.get());
                     for (let i = 0; i < astarSelection.length; i ++) {
-                        thisMap.selectedArea.add (Qt.rect (astarSelection [i].x, astarSelection [i].y, 1, 1));
+                        debug ("astarSelection [i].x,y="+astarSelection[i].x+","+astarSelection[i].y);
+                        if (useTerrains)
+                            thisMap.selectedArea.add (Qt.rect (Math.floor (astarSelection [i].x / 2), Math.floor (astarSelection [i].y / 2), 1, 1));
+                        else
+                            thisMap.selectedArea.add (Qt.rect (astarSelection [i].x, astarSelection [i].y, 1, 1));
                     }
                     thisMap.selectedArea.add (Qt.rect (startDragX, startDragY, 1, 1));
                     if (addToSelection) {
@@ -142,38 +156,44 @@ const pathTool = tiled.registerTool ("Path", {
             dragsPaths = true;
             // TODO we don't need to reset the cache every time, only if the map or the layer changes
             wangIdsCache = [];
-            const astarGraph = new Array (layer.width);
             const clickedTile = layer.tileAt (startDragX, startDragY);
+            let astarGraph;
             if (useTerrains) {
+                astarGraph = new Array (layer.width * 2);
                 const clickedWangIds = findWangIds (clickedTile);
                 for (let x = 0; x < layer.width; x ++) {
-                    astarGraph [x] = new Array (layer.height);
+                    astarGraph [2 * x] = new Array (layer.height * 2);
+                    astarGraph [2 * x + 1] = new Array (layer.height * 2);
                     for (let y = 0; y < layer.height; y ++) {
-                        if (clickedWangIds.length === 0) {
-                            astarGraph [x] [y] = ((layer.tileAt (x, y) === clickedTile) ? 1 : 0);
-                        }
-                        else {
-                            //Find the wIds of this tile ; if one at least matches one of the starting one, we can use it
-                            const tile = layer.tileAt (x, y);
-                            const tileWIds = findWangIds (tile);
-                            astarGraph [x] [y] = 0;
-                            for (const tileWId of tileWIds) {
-                                //log ("tileWId="+tileWId);
-                                for (const tlsWId of clickedWangIds) {
-                                    //log ("tlsWId="+tlsWId);
-                                    // If at least one non-zero wang color is in the tile, we can path through it
-                                    if (tlsWId.some (e=>e!==0 && tileWId.some (f=>f===e))) {
-                                        astarGraph [x] [y] = 1;
-                                        break;
-                                    }
-                                }
+                        //Find the wIds of this tile ; if one at least matches one of the starting one, we can use it
+                        const tile = layer.tileAt (x, y);
+                        const tileWIds = findWangIds (tile);
+                        if (DEBUG) debug ("x="+x+",y="+y);
+                        astarGraph [2 * x] [2 * y] = 0;
+                        astarGraph [2 * x + 1] [2 * y] = 0;
+                        astarGraph [2 * x + 1] [2 * y + 1] = 0;
+                        astarGraph [2 * x] [2 * y + 1] = 0;
+                        for (const tileWId of tileWIds) {
+                            if (DEBUG) debug ("tileWId="+tileWId);
+                            for (const clickedWangId of clickedWangIds) {
+                                //debug ("clickedWangId="+clickedWangId);
+                                if (clickedWangId.some (e => e === tileWId [TOP_LEFT]))
+                                    astarGraph [2 * x] [2 * y] = 1;
+                                if (clickedWangId.some (e => e === tileWId [TOP_RIGHT]))
+                                    astarGraph [2 * x + 1] [2 * y] = 1;
+                                if (clickedWangId.some (e => e === tileWId [BOTTOM_RIGHT]))
+                                    astarGraph [2 * x + 1] [2 * y + 1] = 1;
+                                if (clickedWangId.some (e => e === tileWId [BOTTOM_LEFT]))
+                                    astarGraph [2 * x] [2 * y + 1] = 1;
                             }
-                            //log ("astarGraph["+x+"]["+y+"]="+astarGraph[x][y]);
                         }
+                        //debug ("astarGraph["+x+"]["+y+"]="+astarGraph[x][y]);
                     }
                 }
+                if (DEBUG) debug ("astarGraph="+JSON.stringify(astarGraph));
             }
             else {
+                astarGraph = new Array (layer.width);
                 // We just look for terrains that have the same tile id
                 const clickedId = layer.tileAt (currentTileX, currentTileY).id;
                 for (let x = 0; x < layer.width; x ++) {
@@ -189,7 +209,7 @@ const pathTool = tiled.registerTool ("Path", {
         else {
             if (useTerrains) {
                 fillableIds = findWangIds (layer.tileAt (currentTileX, currentTileY)) [0];  // TODO take into account the case when a tile can have multiple wangids 
-                //tiled.log ("fillableIds="+fillableIds);
+                //debug ("fillableIds="+fillableIds);
                 const thisMap = this.map;
                 thisMap.macro ("Select Terrains area", function () {
                     thisMap.selectedArea.subtract (thisMap.selectedArea.get ());
@@ -204,12 +224,12 @@ const pathTool = tiled.registerTool ("Path", {
                     const cache = new Array (width * layer.height);
                     fill (currentTileX, currentTileY, layer.width, layer.height, 
                         function (wangId) {
-                            //tiled.log ("wangId="+wangId);
+                            //debug ("wangId="+wangId);
                             // If at least one wang color is the same, we include the tile
                             const hasOneSameWangColor = fillableIds.some (
                                 fid => wangId.some (
                                     wid => wid === fid && wid !== 0));
-                            //tiled.log ("hasOneSameWangColor="+hasOneSameWangColor);
+                            //debug ("hasOneSameWangColor="+hasOneSameWangColor);
                             return !hasOneSameWangColor;
                         }, 
                         function (x, y) {

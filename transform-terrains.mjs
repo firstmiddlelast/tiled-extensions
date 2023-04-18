@@ -1,8 +1,4 @@
-import {analyzeTileSets, pickRandomTile} from './wang.mjs';
-
-
-const FEEDBACK_LAYER = "Transform-feedback";
-
+import {analyzeTileSets, pickRandomTile, buildWangCellsMap, wangCellsToMap} from './wang.mjs';
 
 
 const DEBUG = false;
@@ -12,15 +8,6 @@ if (DEBUG) {
 }
 else {
     debug = function (){};
-}
-
-
-
-const getProperty = function (propertyName) {
-    switch (propertyName) {
-        default:
-            throw new Error ("Don't know how to get property " + propertyName);
-    }
 }
 
 
@@ -44,58 +31,6 @@ function transpose (matrix) {
 
 
 
-let wangCells = [];
-// Indexes of the numbers in the wang ids matching the position of the square
-const WANG_TOP_LEFT = 7;
-const WANG_TOP_RIGHT = 1;
-const WANG_BOTTOM_LEFT = 5;
-const WANG_BOTTOM_RIGHT = 3;
-
-const buildWangCellsMap = function (tileMap, tileIdToWang) {
-    const boundingRect = tileMap.selectedArea.boundingRect;
-    wangCells = [];
-    for (let x = 0; x < boundingRect.width; x ++) {
-        wangCells [x * 2] = new Array (boundingRect.height * 2);
-        wangCells [x * 2 + 1] = new Array (boundingRect.height * 2);
-        for (let y = 0; y < boundingRect.height; y ++) {
-            for (const layer of tileMap.selectedLayers) {   // TODO : use visible layers instead of selected ones
-                // FIXME This works only on ONE layer. we must have as many wangCells arrays as we have layers
-                const wangTile = tileIdToWang [layer.tileAt (x + boundingRect.x, y + boundingRect.y).id];
-                wangCells [x * 2] [y * 2] = wangTile [WANG_TOP_LEFT];
-                wangCells [x * 2 + 1] [y * 2] = wangTile [WANG_TOP_RIGHT];
-                wangCells [x * 2] [y * 2 + 1] = wangTile [WANG_BOTTOM_LEFT];
-                wangCells [x * 2 + 1] [y * 2 + 1] = wangTile [WANG_BOTTOM_RIGHT];
-            }
-        }
-    }
-}
-
-
-
-const wangCellsToMap = function (tileMap, tileById, wangIdsToTiles, tileProbabilities) {
-    const boundingRect = tileMap.selectedArea.boundingRect;
-    for (const tileId in tileById) {
-        debug ("tileById["+tileId+"]="+tileById[tileId]);
-    }
-    const edits = {};
-    debug (tileMap.selectedLayers.length + " layers selected");
-    for (const layer of tileMap.selectedLayers) {   // TODO : use visible layers instead of selected ones
-                // FIXME This works only on ONE layer. we must have as many wangCells arrays as we have layers
-        const edit = layer.edit ();
-        for (let x = 0; x < wangCells.length / 2; x ++) {
-            for (let y = 0; y < wangCells [0].length / 2; y ++) {
-                const wangId = [0, wangCells [x * 2 + 1] [y * 2], 0, wangCells [x * 2 + 1] [y * 2 + 1], 
-                    0, wangCells [x * 2] [y * 2 + 1], 0, wangCells [x * 2] [y * 2]];
-                const r = pickRandomTile (wangId, wangIdsToTiles, tileProbabilities);
-                edit.setTile (x + boundingRect.x, y + boundingRect.y, tileById [r]);
-            }
-        }
-        edit.apply ();
-    }
-}
-
-
-
 const scale = function (matrix, scaleX, scaleY) {
     const output = new Array (matrix.length * scaleX);
     for (let x = 0; x < matrix.length; x ++) {
@@ -112,6 +47,42 @@ const scale = function (matrix, scaleX, scaleY) {
     }
     return output;
 }
+
+
+/**
+ *
+ * Every two (because there are 2 wangcells for 1 tile) rows, add rows that are identical to the last wangId row are added. Same for columns. 
+ */
+const inflate = function (matrix, addX, addY) {
+    let output = [];
+    let outputX = 0;
+    let outputY;
+    for (let x = 0; x < matrix.length; x ++) {
+        output [outputX] = [];
+        for (let y = 0; y < matrix [0].length; y ++) {
+            output [outputX] [y] = matrix [x] [y];
+        }
+        outputX ++;
+        if (x & 1 !== 0 && x !== matrix.length - 1) {
+            for (let i = 0; i < addX; i ++) {
+                output [outputX] = [];
+                for (let y = 0; y < matrix [0].length; y ++) {
+                    output [outputX] [y] = matrix [x] [y];
+                }
+                outputX ++;
+            }
+        }
+    }
+    if (addY > 0) {
+        output = transpose (output);
+        output = inflate (output, addY, 0);
+        output = transpose (output);
+    }
+    return output;
+}
+
+tiled.log (JSON.stringify (inflate ([[0,1,2],[3,4,5]], 0, 2)));
+
 const randomizeSelectedArea = function () {
     // Go through the selected area..
     const activeMap = tiled.activeAsset;
@@ -148,6 +119,7 @@ const randomizeSelectedArea = function () {
 
 
 const transformDialog = tiled.registerAction ("TransformTerrainsDialog", function (action) {
+    let wangCells = [];
     const d = new Dialog ("Transform Terrains");
     let transformCombo;
     let activeMap;
@@ -156,7 +128,7 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
     selectTransformInputButton.clicked.connect (function () {
         activeMap = tiled.activeAsset;
         const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
-        buildWangCellsMap (activeMap, tileIdToWang);
+        wangCells = buildWangCellsMap (activeMap, tileIdToWang);
         transformSelectedButton.enabled = true;
     });
     transformCombo = d.addComboBox ("Transforms", ["Horizontal symmetry", "Vertical symmetry", "Rotate left", "Rotate right", "Rotate 180°"]);
@@ -196,34 +168,38 @@ const transformDialog = tiled.registerAction ("TransformTerrainsDialog", functio
         debug ("activeMap="+activeMap);
         const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
         debug ("activeMap="+activeMap);
-        wangCellsToMap (activeMap, tileById, wangIdsToTiles, tileProbabilities);
+        wangCellsToMap (wangCells, activeMap, tileById, wangIdsToTiles, tileProbabilities);
         debug ("activeMap="+activeMap);
         transformSelectedButton.enabled = false;
     });
     transformSelectedButton.enabled = false;
     d.addSeparator ();
-    const scalingSelectButton = d.addButton ("Select the area to scale up");
+    const scalingSelectButton = d.addButton ("Select the area to scale up or inflate");
     scalingSelectButton.clicked.connect (function () {
         activeMap = tiled.activeAsset;
         const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
-        buildWangCellsMap (activeMap, tileIdToWang);
+        wangCells = buildWangCellsMap (activeMap, tileIdToWang);
         scalingApplyButton.enabled = true;
     });
-    const xScalingSpinner = d.addNumberInput ("X Scaling");
+    const scaleOrInflate = d.addCheckBox ("Scale/inflate");
+    const xScalingSpinner = d.addNumberInput ("X");
     xScalingSpinner.decimals = 0;
-    xScalingSpinner.minimum = 1;
-    const yScalingSpinner = d.addNumberInput ("Y Scaling");
+    const yScalingSpinner = d.addNumberInput ("Y");
     yScalingSpinner.decimals = 0;
-    yScalingSpinner.minimum = 1;
-    const scalingApplyButton = d.addButton ("Scale up into the selected area");
+    const scalingApplyButton = d.addButton ("Scale up / inflate into selected");
     scalingApplyButton.enabled = false;
     scalingApplyButton.clicked.connect (function () {
         if (tiled.activeAsset !== activeMap) {
             tiled.alert ("The input selection for scaling must be in the same map as the output");
         }
-        wangCells = scale (wangCells, xScalingSpinner.value, yScalingSpinner.value);
+        if (scaleOrInflate.checked) {
+            wangCells = scale (wangCells, xScalingSpinner.value, yScalingSpinner.value);
+        }
+        else {
+            wangCells = inflate (wangCells, xScalingSpinner.value, yScalingSpinner.value * 2);
+        }
         const [wangIdsToTiles, tileById, tileIdToWang, tileProbabilities] = analyzeTileSets (activeMap);
-        wangCellsToMap (activeMap, tileById, wangIdsToTiles, tileProbabilities);
+        wangCellsToMap (wangCells, activeMap, tileById, wangIdsToTiles, tileProbabilities);
         scalingApplyButton.enabled = false;
     });
     d.addSeparator ();
