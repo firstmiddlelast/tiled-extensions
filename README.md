@@ -68,10 +68,12 @@ TODOs :
 
 # Tiled Javascript export demo
 This is not a Tiled extension, but a demo on how to use the Tiled javascript export to display a map in the browser. 
-Requirements : 
+
+## Requirements
 You will need, in the same directory : 
 * `pako.js` from https://raw.githubusercontent.com/nodeca/pako/master/dist/pako.js
 * The tileset used by the map, exported as `tileset.png` using the procedure described at https://github.com/mapeditor/tiled/issues/1944#issuecomment-1574845289
 * The map, exported as `map.js`. Only the first layer is displayed, using the first tileset. 
 * The `map.html` from this repository
+
 Once this is all set, just open the `map.html` file in your browser, it should display your map. 
