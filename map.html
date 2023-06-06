@@ -5,34 +5,52 @@
 img {
     object-fit:none;
 }
+img[src=""] {
+    border:none;
+}
+#map div.layer {
+    position:absolute;
+    top:0;
+    left:0;
+}
 </style>
-        <div id="map"></div>
+        <div id="map" style="position:relative"></div>
         <script>
-        function drawMap (width, height, tileSizeX, tileSizeY, layerContent, tilesetWidth, tilesetHeight, firstGid) {
+        function drawLayer (id, width, height, tileSizeX, tileSizeY, layerContent, tilesetWidth, tilesetHeight, firstGid) {
             let map = document.getElementById ("map");
-            const mapXSize = width*tileSizeX;
-            const mapYSize = height*tileSizeY;
+            const mapXSize = width * tileSizeX;
+            const mapYSize = height * tileSizeY;
             var layerIndex = 0;
+            var layerDiv = document.createElement ("div");
             for (var y = 0; y < mapYSize; y += tileSizeY) {
                 var lineDiv = document.createElement ("div");
                 for (var x = 0; x < mapXSize; x += tileSizeX) {
                     // The tile ids start at firstGid and increment over every tile in the tileset
                     const tileId = layerContent [layerIndex] - firstGid;
                     var cellImg = document.createElement ("img");
-                    // Use the Tiled exported tileset as the source for the image
-                    cellImg.setAttribute ("src", "tileset.png");
                     // We show only one tile from the tileset
                     cellImg.setAttribute ("width", tileSizeX + "px");
                     cellImg.setAttribute ("height", tileSizeY + "px");
-                    // Offset the tileset image so that the part that is visible is the tile which ID we know
-                    const yOffset = tileSizeY * (tileId / tilesetWidth | 0);
-                    const xOffset = tileSizeX * (tileId % tilesetWidth);
-                    cellImg.setAttribute ("style", "object-position:-" + xOffset + "px -" + yOffset + "px");
+                    // Use the Tiled exported tileset as the source for the image
+                    cellImg.setAttribute ("src", "tileset.png");
+                    if (tileId >= 0) {
+                        // Offset the tileset image so that the part that is visible is the tile which ID we know
+                        const yOffset = tileSizeY * (tileId / tilesetWidth | 0);
+                        const xOffset = tileSizeX * (tileId % tilesetWidth);
+                        cellImg.setAttribute ("style", "object-position:-" + xOffset + "px -" + yOffset + "px");
+                    }
+                    else {
+                        // Offset the tilset image so that it is not visible (making the tile transparent)
+                        cellImg.setAttribute ("style", "object-position:" + tileSizeX + "px " + tileSizeY + "px");
+                    }
                     lineDiv.appendChild (cellImg);
                     layerIndex ++;
                 }
-                map.appendChild (lineDiv);
+                layerDiv.appendChild (lineDiv);
             }
+            layerDiv.setAttribute ("id", id);
+            layerDiv.setAttribute ("class", "layer");
+            map.appendChild (layerDiv);
         }
         </script>
         <!-- Load the js library used for unzipping the layer -->
@@ -47,29 +65,33 @@ img {
                 tileMap = TileMaps [mapName];
             }
 
-            // Retrieve the first layer data by unzipping the layer data
-            const layer = tileMap.layers [0];
-            const layerHeight = layer.height;
-            const layerWidth = layer.width;
-            // Unzipping the layer data :
-            // Decode base64 (convert ascii to binary)..
-            const strData     = atob(layer.data);
-            // Convert binary string to character-number array..
-            const charData    = strData.split('').map(function(x){return x.charCodeAt(0);});
-            // Turn number array into byte-array..
-            const binData     = new Uint8Array(charData);
-            // Unzip..
-            const data        = pako.inflate(binData);
-            // ..and turn into an array of 32 bytes unsigned integers, containing the tile ids. 
-            var layerContent = new Uint32Array(data.buffer);
+            for (var layer of tileMap.layers) {
+                if (layer.type !== "tilelayer") {
+                    continue;
+                }
+                // Retrieve the layer data by unzipping the layer data
+                const layerHeight = layer.height;
+                const layerWidth = layer.width;
+                // Unzipping the layer data :
+                // Decode base64 (convert ascii to binary)..
+                const strData     = atob(layer.data);
+                // Convert binary string to character-number array..
+                const charData    = strData.split('').map(function(x){return x.charCodeAt(0);});
+                // Turn number array into byte-array..
+                const binData     = new Uint8Array(charData);
+                // Unzip..
+                const data        = pako.inflate(binData);
+                // ..and turn into an array of 32 bytes unsigned integers, containing the tile ids. 
+                var layerContent = new Uint32Array(data.buffer);
 
-            // Retrieve tileset size and first tile id
-            const tileSet = tileMap.tilesets [0];
-            const firstGID = tileSet.firstgid;
-            const tilesetWidth = tileSet.imagewidth / tileSet.tilewidth;
-            const tilesetHeight = tileSet.imageheight / tileSet.tileheight;
+                // Retrieve tileset size and first tile id
+                const tileSet = tileMap.tilesets [0];
+                const firstGID = tileSet.firstgid;
+                const tilesetWidth = tileSet.imagewidth / tileSet.tilewidth;
+                const tilesetHeight = tileSet.imageheight / tileSet.tileheight;
 
-            drawMap (layerWidth, layerHeight, tileSet.tilewidth, tileSet.tileheight, layerContent, tilesetWidth, tilesetHeight, firstGID);
+                drawLayer ("layer " + layer.id, layerWidth, layerHeight, tileSet.tilewidth, tileSet.tileheight, layerContent, tilesetWidth, tilesetHeight, firstGID);
+            }
         </script>
     </body>
 </html>
