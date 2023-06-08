@@ -5,9 +5,6 @@
 img {
     object-fit:none;
 }
-img[src=""] {
-    border:none;
-}
 #map div.layer {
     position:absolute;
     top:0;
@@ -20,13 +17,13 @@ img[src=""] {
             let map = document.getElementById ("map");
             const mapXSize = width * tileSizeX;
             const mapYSize = height * tileSizeY;
-            var layerIndex = 0;
+            var cellIndex = 0;
             var layerDiv = document.createElement ("div");
             for (var y = 0; y < mapYSize; y += tileSizeY) {
                 var lineDiv = document.createElement ("div");
                 for (var x = 0; x < mapXSize; x += tileSizeX) {
                     // The tile ids start at firstGid and increment over every tile in the tileset
-                    const tileId = layerContent [layerIndex] - firstGid;
+                    const tileId = layerContent [cellIndex] - firstGid;
                     var cellImg = document.createElement ("img");
                     // We show only one tile from the tileset
                     cellImg.setAttribute ("width", tileSizeX + "px");
@@ -44,7 +41,7 @@ img[src=""] {
                         cellImg.setAttribute ("style", "object-position:" + tileSizeX + "px " + tileSizeY + "px");
                     }
                     lineDiv.appendChild (cellImg);
-                    layerIndex ++;
+                    cellIndex ++;
                 }
                 layerDiv.appendChild (lineDiv);
             }
@@ -58,7 +55,7 @@ img[src=""] {
         <script type="text/javascript" src="pako.js"></script>
         <!-- Load the Tiled map -->
         <script type="text/javascript" src="map.js"></script>
-        <!-- Show the first layer of the map, using the first tileset -->
+        <!-- Show the layers of the map, using the first tileset -->
         <script>
             var tileMap;
             for (var mapName in TileMaps) {
