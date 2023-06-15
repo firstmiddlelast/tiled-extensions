@@ -10,6 +10,15 @@ img {
     top:0;
     left:0;
 }
+img.flippedX {
+    transform: scaleX(-1);
+}
+img.flippedY {
+    transform: scaleY(-1);
+}
+img.flippedXY {
+    transform: scale(-1,-1);
+}
 </style>
         <div id="map" style="position:relative"></div>
         <script>
@@ -23,13 +32,31 @@ img {
                 var lineDiv = document.createElement ("div");
                 for (var x = 0; x < mapXSize; x += tileSizeX) {
                     // The tile ids start at firstGid and increment over every tile in the tileset
-                    const tileId = layerContent [cellIndex] - firstGid;
+                    var tileId = layerContent [cellIndex] - firstGid;
+                    const flipFlags = tileId & 0xF0000000;
+                    tileId = tileId & 0xFFFFFFF;   // Remove the rotation bits from the tile id
                     var cellImg = document.createElement ("img");
                     // We show only one tile from the tileset
                     cellImg.setAttribute ("width", tileSizeX + "px");
                     cellImg.setAttribute ("height", tileSizeY + "px");
                     // Use the Tiled exported tileset as the source for the image
                     cellImg.setAttribute ("src", "tileset.png");
+                    // Draw the tile appropriately to the rotation
+                    if (flipFlags !== 0) {
+                        var flipClass = "";
+                        if (flipFlags & 0x80000000) {
+                            flipClass += "flippedX ";
+                        }
+                        // NOTE : not tested
+                        if (flipFlags & 0x40000000) {
+                            flipClass += "flippedY ";
+                        }
+                        // NOTE : not tested
+                        if (flipFlags & 0x20000000) {
+                            flipClass += "flippedXY ";
+                        }
+                        cellImg.setAttribute ("class", flipClass);
+                    }
                     if (tileId >= 0) {
                         // Offset the tileset image so that the part that is visible is the tile which ID we know
                         const yOffset = tileSizeY * (tileId / tilesetWidth | 0);
